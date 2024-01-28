@@ -9,7 +9,7 @@ const buttonVariants= cva(
     {
         variants: {
             variant: {
-                default: 'bg-slate-900 text-white hover:bg-slate-800',
+                default: '!bg-slate-900 !text-white hover:!bg-slate-800',
                 ghost: 'bg-transparent hover:text-slate-900 hover:bg-slate-200'
             },
             size:{
@@ -17,25 +17,25 @@ const buttonVariants= cva(
                 sm: 'h-9 px-2',
                 lg: 'h-11 px-8',
             },
-            defaultVariants:{
-                variant: 'default',
-                size: 'default'
-            }
         },
+        defaultVariants:{
+            variant: 'default',
+            size: 'default'
+        }
     }
     )
     
     interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
         isLoading?: boolean,
-
     }
 
-const ButtonUI: FC<ButtonProps> = ({className, children, variant, isLoading, size, ...props}) => {
+const Button: FC<ButtonProps> = ({className, children, variant, isLoading, size, ...props}) => {
   return <button className={cn(buttonVariants({variant, size, className}))} disabled={isLoading} {...props}>
     {
-        isLoading ? <Loader2 className='mr-2 h-4 w-4 animate-spin' /> : children
+        isLoading ? <Loader2 className='mr-2 h-4 w-4 animate-spin' /> : null
         }
+        {children}
   </button>
 }
 
-export default ButtonUI
+export default Button

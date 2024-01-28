@@ -1,4 +1,4 @@
-import { Button } from '@/common'
+import Button from '@/common/Button'
 import { FC } from 'react'
 
 interface pageProps {
