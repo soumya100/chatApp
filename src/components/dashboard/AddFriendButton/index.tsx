@@ -8,11 +8,13 @@ import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
 import { z } from 'zod'
 
-interface AddFriendProps { }
+interface AddFriendProps { 
+  closeModalHandler(): void
+}
 
 type FormData = z.infer<typeof addFriendValidator>
 
-const AddFriendButton: FC<AddFriendProps> = ({ }) => {
+const AddFriendButton: FC<AddFriendProps> = ({ closeModalHandler }) => {
 
   const {
     register,
@@ -30,6 +32,7 @@ const AddFriendButton: FC<AddFriendProps> = ({ }) => {
       await axios.post('/api/friends/add', {
         email: validatedEmail,
       })
+      closeModalHandler()
       toast.success('Friend request sent successfully')
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -50,7 +53,11 @@ const AddFriendButton: FC<AddFriendProps> = ({ }) => {
     addFriend(data.email)
   }
 
-  return <form onSubmit={handleSubmit(onSubmit)} className="max-w-sm">
+  return <main className='px-5'>
+     <h1 className="font-bold text-2xl mb-8">
+        Add a friend
+    </h1>
+    <form onSubmit={handleSubmit(onSubmit)} className="max-w-sm">
     <label htmlFor="email" className='block text-sm font-medium leading-6 text-grey-900'>
       Add friend by E-mail
     </label>
@@ -65,6 +72,7 @@ const AddFriendButton: FC<AddFriendProps> = ({ }) => {
     <small className='mt-1 text-xs text-red-600'>{errors.email?.message}</small>
 
   </form>
+    </main>
 }
 
 export default AddFriendButton
