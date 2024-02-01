@@ -1,5 +1,5 @@
 "use client"
-import { LogOut, MessageCircleCode, UserPlus } from 'lucide-react'
+import { MessageCircleCode, UserPlus } from 'lucide-react'
 import Link from 'next/link'
 import { FC, useState } from 'react'
 import { Button, Dialog, SignOutButton } from '@/common'
@@ -94,8 +94,8 @@ const DashboardLayout: FC<dashBoardLayoutProps> = ({ profileImage, profileName, 
     </div>
 
     {/* add friends dialog box */}
-    <Dialog open={openAddFriendModal} closeHandler={handleModalStateClose}
-      className='absolute top-1/3 shadow-md py-5 rounded-lg backdrop:bg-black/20' title='Add friend'>
+   <Dialog open={openAddFriendModal} closeHandler={handleModalStateClose}
+      className='shadow-md py-5 rounded-lg backdrop:bg-black/20 w-1/3 flex justify-center flex-col items-center' title='Add friend'>
       <AddFriendButton closeModalHandler={handleModalStateClose} />
     </Dialog>
   </>

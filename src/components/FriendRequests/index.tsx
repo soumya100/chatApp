@@ -1,10 +1,10 @@
 'use client'
-import { Button, NoContent } from '@/common'
+import { NoContent } from '@/common'
 import axios from 'axios'
-import { Check, UserCheck, UserPlus, UserRoundX, X } from 'lucide-react'
+import { UserCheck, UserPlus, UserRoundX, X } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { FC, useEffect, useState } from 'react'
+import { FC, useState } from 'react'
 
 interface FriendRequestsProps {
     incomingFriendRequests: incomingFriendRequest[],
@@ -18,19 +18,26 @@ const FriendRequests: FC<FriendRequestsProps> = ({ incomingFriendRequests, sessi
 
     //accept friend functionality
     const acceptOrDenyFriendRequest= async(senderId: string, type: 'accept' | 'deny')=>{
-        switch(type){
-            case 'accept':
-                await axios.post('/api/requests/accept', {id: senderId})
-            break;
-            case 'deny': 
-                await axios.post('/api/requests/deny', {id: senderId})
-            break;
-            default:
-                throw new Error('Something went wrong')
+        try {
+            switch(type){
+                case 'accept':
+                    await axios.post('/api/friends/accept', {id: senderId})
+                break;
+                case 'deny': 
+                    await axios.post('/api/friends/deny', {id: senderId})
+                break;
+                default:
+                    throw new Error('Something went wrong')
+            }
+            setFriendRequests((prev)=> prev.filter((request) => request.senderId !== senderId))
+            router.refresh()
+        } catch (error) {
+            
         }
-        setFriendRequests((prev)=> prev.filter((request) => request.senderId !== senderId))
-        router.refresh()
     }
+
+    // console.log(friendRequests,'* fr')
+    // console.log(incomingFriendRequests,'* incomingFriendRequests')
 
     return <main className='pt-8 px-10'>
         <div className="flex gap-5 items-center mb-8">

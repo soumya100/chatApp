@@ -53,8 +53,8 @@ const AddFriendButton: FC<AddFriendProps> = ({ closeModalHandler }) => {
     addFriend(data.email)
   }
 
-  return <main className='px-5'>
-     <h1 className="font-bold text-2xl mb-8">
+  return <main className='px-5 w-full'>
+     <h1 className="font-bold text-2xl mb-4">
         Add a friend
     </h1>
     <form onSubmit={handleSubmit(onSubmit)} className="max-w-sm">
