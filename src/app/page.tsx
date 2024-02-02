@@ -1,14 +1,9 @@
 "use client"
 import { Loader2 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { Suspense, useEffect } from "react";
+import { Suspense } from "react";
 
 
 export default function Home() {
-  const router= useRouter()
-  useEffect(()=>{
-    router.push('/login')
- },[router])
   return (
     <Suspense fallback={<Loader2 className="animate-spin text-green-600" size={30}/>}>
     <main className="flex !h-screen !w-full !justify-center !items-center gap-5">
