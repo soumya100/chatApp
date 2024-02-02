@@ -1,4 +1,5 @@
 import DashboardLayout from '@/components/dashboardLayout';
+import { getFriendsByUserId } from '@/helpers/getFriendsByUserId';
 import { fetchRedis } from '@/helpers/redis';
 import { authOptions } from '@/lib/auth';
 import { getServerSession } from 'next-auth';
@@ -22,12 +23,16 @@ const Layout = async ({ children }: LayoutProps) => {
     ) as User[]
     )?.length
 
+    const friends= await getFriendsByUserId(session.user.id)
+
+
     return <div className='w-full flex h-screen'>
         <DashboardLayout profileImage={session.user.image || ''} 
         profileName={session.user.name || ''} 
         profileEmail={session.user.email || ''} 
         sessionId={session.user.id || ''}
         unseenFriendRequests={+unseenFriendRequestCount}
+friends={friends}
         />
         {children}
     </div>

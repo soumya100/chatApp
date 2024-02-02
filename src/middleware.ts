@@ -22,7 +22,7 @@ export default withAuth(
         //checking if the user is in login page
         if(isLoginPage){
             if(isAuth){    //if he/she is authenticated
-                return NextResponse.redirect(new URL('/dashboard', req.url))  //redirecting to dahboard
+                return NextResponse.redirect(new URL('/dashboard', req.url))  //redirecting to dashboard
             }
 
             return NextResponse.next()   //else the it will be as it is in login page

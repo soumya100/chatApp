@@ -6,16 +6,18 @@ import { Button, Dialog, SignOutButton } from '@/common'
 import Image from 'next/image'
 import FriendRequestsSideBarOption from '../FriendRequestSideBarOption'
 import AddFriendButton from '../dashboard/AddFriendButton'
+import ChatList from './ChatList'
 
 interface dashBoardLayoutProps {
   profileImage: string,
   profileName: string,
   profileEmail: string,
   sessionId: string,
-  unseenFriendRequests: number
+  unseenFriendRequests: number,
+  friends: User[]
 }
 
-const DashboardLayout: FC<dashBoardLayoutProps> = ({ profileImage, profileName, profileEmail,sessionId, unseenFriendRequests }) => {
+const DashboardLayout: FC<dashBoardLayoutProps> = ({ profileImage, profileName, profileEmail,sessionId, unseenFriendRequests, friends }) => {
 
   const [openAddFriendModal, setopenAddFriendModal] = useState(false)
 
@@ -30,7 +32,7 @@ const DashboardLayout: FC<dashBoardLayoutProps> = ({ profileImage, profileName, 
   }
 
   return <>
-    <div className="flex h-full w-full max-w-[22rem] grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white px-6">
+    <div className="flex h-full w-full min-w-[22rem] max-w-[22rem] grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white px-6">
       {/* Logo Section */}
       <Link href={`/dashboard`} className='flex h-16 shrink-0 items-center gap-5'>
         <MessageCircleCode size={40} color='black' />
@@ -38,14 +40,14 @@ const DashboardLayout: FC<dashBoardLayoutProps> = ({ profileImage, profileName, 
           Chat+
         </h1>
       </Link>
-      <div className="text-xs font-semibold leading-6 text-gray-400">
+     {friends && friends.length !==0 && <div className="text-xs font-semibold leading-6 text-gray-400">
         Your Chats
-      </div>
+      </div>}
       {/* nav section begins */}
       <nav className="flex flex-1 flex-col">
         <ul role='list' className='flex flex-1 flex-col gap-y-7'>
           <li>
-            chats
+            <ChatList friends={friends} sessionId={sessionId}/>
           </li>
           <li>
             <div className="text-xs font-semibold leading-6 text-gray-400">
