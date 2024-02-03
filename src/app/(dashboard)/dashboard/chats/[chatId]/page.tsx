@@ -57,7 +57,11 @@ equal to userId1 then the partner will be userId2 and vice-versa*/
 
   const initialMessages= await getChatMessages(chatId)
 
-  return <Chat chatPartner={chatPartner} initialMessages={initialMessages} sessionId={session.user.id}/>
+  return <Chat chatPartner={chatPartner} chatId={chatId}
+   initialMessages={initialMessages} 
+   sessionId={session.user.id}
+   sessionImg={session.user.image || ''}
+   />
 }
 
 export default page

@@ -1,3 +1,4 @@
+"use client"
 import Image from 'next/image'
 import { FC } from 'react'
 import Messages from './Messages'
@@ -7,10 +8,14 @@ import ChatInput from './ChatInput'
 interface ChatProps {
   chatPartner: User
   initialMessages: Message[]
-  sessionId: string
+  sessionId: string,
+  chatId: string,
+  sessionImg: string
 }
 
-const Chat: FC<ChatProps> = ({chatPartner,initialMessages,sessionId}) => {
+const Chat: FC<ChatProps> = ({chatPartner,initialMessages,sessionId, chatId, sessionImg}) => {
+
+
   return  <div className='flex flex-1 justify-between flex-col h-full max-h-[calc(100vh-6rem)]'>
   <div className="flex sm:items-center justify-between py-3 border-b-2 border-gray-200 px-5">
    <div className="relative flex items-center space-x-4">
@@ -34,8 +39,8 @@ const Chat: FC<ChatProps> = ({chatPartner,initialMessages,sessionId}) => {
     </div>
    </div>
   </div>
-  <Messages initialMessages={initialMessages} sessionId={sessionId}/>
-  <ChatInput />
+  <Messages initialMessages={initialMessages} sessionId={sessionId} sessionImg={sessionImg} chatPartner={chatPartner}/>
+  <ChatInput chatPartner={chatPartner.name} chatId={chatId} />
  </div>
 }
 
