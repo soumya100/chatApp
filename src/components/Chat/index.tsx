@@ -39,7 +39,9 @@ const Chat: FC<ChatProps> = ({chatPartner,initialMessages,sessionId, chatId, ses
     </div>
    </div>
   </div>
-  <Messages initialMessages={initialMessages} sessionId={sessionId} sessionImg={sessionImg} chatPartner={chatPartner}/>
+  <Messages initialMessages={initialMessages} sessionId={sessionId} 
+  sessionImg={sessionImg}
+   chatPartner={chatPartner} chatId={chatId}/>
   <ChatInput chatPartner={chatPartner.name} chatId={chatId} />
  </div>
 }

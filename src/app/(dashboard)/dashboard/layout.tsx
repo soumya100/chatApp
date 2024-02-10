@@ -18,21 +18,21 @@ const Layout = async ({ children }: LayoutProps) => {
 
     if (!session) notFound()
 
-    const unseenFriendRequestCount= (await fetchRedis('smembers', 
-    `user:${session.user.id}:incoming_friend_requests`
+    const unseenFriendRequestCount = (await fetchRedis('smembers',
+        `user:${session.user.id}:incoming_friend_requests`
     ) as User[]
     )?.length
 
-    const friends= await getFriendsByUserId(session.user.id)
+    const friends = await getFriendsByUserId(session.user.id)
 
 
     return <div className='w-full flex h-screen'>
-        <DashboardLayout profileImage={session.user.image || ''} 
-        profileName={session.user.name || ''} 
-        profileEmail={session.user.email || ''} 
-        sessionId={session.user.id || ''}
-        unseenFriendRequests={+unseenFriendRequestCount}
-friends={friends}
+        <DashboardLayout profileImage={session.user.image || ''}
+            profileName={session.user.name || ''}
+            profileEmail={session.user.email || ''}
+            sessionId={session.user.id || ''}
+            unseenFriendRequests={+unseenFriendRequestCount}
+            friends={friends}
         />
         {children}
     </div>

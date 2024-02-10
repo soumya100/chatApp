@@ -1,20 +1,41 @@
 'use client'
 import { NoContent } from '@/common'
+import { pusherClient } from '@/lib/pusher'
+import { toPusherKey } from '@/lib/utils'
 import axios from 'axios'
-import { UserCheck, UserPlus, UserRoundX, X } from 'lucide-react'
+import { UserCheck, UserPlus, UserRoundX } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { FC, useState } from 'react'
+import { FC, useEffect, useState } from 'react'
 
 interface FriendRequestsProps {
-    incomingFriendRequests: incomingFriendRequest[],
+    incomingFriendRequests: IncomingFriendRequest[],
     sessionId: string
 }
 
 const FriendRequests: FC<FriendRequestsProps> = ({ incomingFriendRequests, sessionId }) => {
-    const [friendRequests, setFriendRequests] = useState<incomingFriendRequest[]>(incomingFriendRequests)
     const router= useRouter()
+    const [friendRequests, setFriendRequests] = useState<IncomingFriendRequest[]>(incomingFriendRequests)
+    useEffect(() => {
+      pusherClient.subscribe(
+        toPusherKey(`user:${sessionId}:incoming_friend_requests`) //listening to the changes
+      )
 
+      const friendRequestHandler=({senderId, senderEmail, senderImage, senderName}: IncomingFriendRequest)=>{
+        setFriendRequests((prev)=> [...prev, { senderId, senderEmail, senderImage, senderName}])
+      }
+
+      pusherClient.bind('incoming_friend_requests', friendRequestHandler) // telling pusher what to do when the changes occurs
+
+
+      return()=> {
+        //cleaning up the events for optimising performances
+        pusherClient.unsubscribe(toPusherKey(`user:${sessionId}:incoming_friend_requests`))
+        pusherClient.unbind('incoming_friend_requests', friendRequestHandler)
+      }
+
+    }, [sessionId])
+       
 
     //accept friend functionality
     const acceptOrDenyFriendRequest= async(senderId: string, type: 'accept' | 'deny')=>{

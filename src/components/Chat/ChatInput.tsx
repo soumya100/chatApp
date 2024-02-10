@@ -23,6 +23,9 @@ const handleInputChange=(e: ChangeEvent<HTMLTextAreaElement>)=>{
 
 //send message function use to trigger the send message
 const sendMessage=async()=>{
+
+  if(!input) return
+
   setIsLoading(true)
   try {
     if(input.trim().length > 1){

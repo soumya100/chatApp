@@ -1,6 +1,8 @@
 import { fetchRedis } from "@/helpers/redis"
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { pusherServer } from "@/lib/pusher"
+import { toPusherKey } from "@/lib/utils"
 import { addFriendValidator } from "@/lib/validations/add-friends"
 import { getServerSession } from "next-auth"
 import { z } from "zod"
@@ -51,7 +53,18 @@ export async function POST(req: Request) {
         }
 
         //valid request, sending friend request
-        db.sadd(`user:${idToAdd}:incoming_friend_requests`, session.user.id)
+       await pusherServer.trigger(
+            toPusherKey(`user:${idToAdd}:incoming_friend_requests`),  //sending real time notifications via socket
+            'incoming_friend_requests',
+            {
+                senderId: session.user.id,
+                senderEmail: session.user.email,
+                senderImage: session.user.image,
+                senderName: session.user.name
+            }
+        )
+
+       await db.sadd(`user:${idToAdd}:incoming_friend_requests`, session.user.id)
         return new Response('OK')
 
     } catch (error) {
