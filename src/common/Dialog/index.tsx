@@ -1,6 +1,6 @@
 "use client"
 import { X } from 'lucide-react'
-import { DialogHTMLAttributes, FC, ReactNode, useEffect, useLayoutEffect, useRef } from 'react'
+import { DialogHTMLAttributes, FC, KeyboardEvent, ReactNode, useEffect, useLayoutEffect, useRef } from 'react'
 
 interface DialogProps extends DialogHTMLAttributes<HTMLDialogElement> {
   children: ReactNode,
@@ -18,11 +18,15 @@ const Dialog: FC<DialogProps> = ({ children, className, open, onClick, closeHand
   useEffect(() => {
     if (dialogRef.current && open === false)
       dialogRef.current.close();
-
-      console.log(dialogRef.current, '* open')
   }, [open]);
 
-  return open && <dialog className={className} ref={dialogRef} {...props}>
+  const onEscPress=(e: KeyboardEvent<HTMLDialogElement>)=>{
+    if(e.key.toLowerCase()==='escape'){
+      closeHandler()
+    }
+  }
+
+  return open && <dialog className={className} ref={dialogRef} onKeyDown={onEscPress} {...props}>
     <div className='flex justify-end w-full pr-3'>
       <X onClick={closeHandler} className='cursor-pointer text-red-500' size={20} />
     </div>

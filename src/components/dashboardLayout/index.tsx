@@ -97,7 +97,7 @@ const DashboardLayout: FC<dashBoardLayoutProps> = ({ profileImage, profileName, 
 
     {/* add friends dialog box */}
    <Dialog open={openAddFriendModal} closeHandler={handleModalStateClose}
-      className='shadow-md py-5 rounded-lg backdrop:bg-black/20 w-1/3 flex justify-center flex-col items-center' title='Add friend'>
+      className='shadow-md py-5 rounded-lg backdrop:bg-black/20 w-[25%] flex justify-center flex-col items-center' title='Add friend'>
       <AddFriendButton closeModalHandler={handleModalStateClose} />
     </Dialog>
   </>

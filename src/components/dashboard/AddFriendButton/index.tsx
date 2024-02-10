@@ -70,7 +70,6 @@ const AddFriendButton: FC<AddFriendProps> = ({ closeModalHandler }) => {
       <Button>Add</Button>
     </div>
     <small className='mt-1 text-xs text-red-600'>{errors.email?.message}</small>
-
   </form>
     </main>
 }
