@@ -71,7 +71,7 @@ const ChatList: FC<ChatListProps> = ({friends, sessionId}) => {
     {friends.sort().map((friend)=>{
 
         //counting here how many unseen messages are there for this particular friend
-       const unSeenMessagesCount= unSeenMessages.filter((unseenMsg)=>{
+       let unSeenMessagesCount= unSeenMessages.filter((unseenMsg)=>{
             return unseenMsg.senderId === friend.id
         }).length
 

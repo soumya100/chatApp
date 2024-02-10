@@ -34,7 +34,7 @@ const Login: FC<LoginProps> = ({}) => {
   <div className="w-full flex flex-col items-center max-w-md space-y-8 border py-5 rounded-lg shadow-md">
       <div className='flex flex-col items-center gap-8'>
           <div className='flex gap-5 items-center'>
-          <MessageCircleCode fontSize={'largest'} color='white'/> 
+          <MessageCircleCode color='white' size={40}/> 
          <h1 className='!text-4xl font-bold !text-white'>
         Chat+
         </h1> 
