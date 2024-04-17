@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { FC } from 'react'
 
 interface friendLastMsg extends User {
-    lastMessage: Message
+    lastMessage: Message | null
 }
 
 interface DashboardProps {
@@ -47,9 +47,9 @@ const Dashboard: FC<DashboardProps> = ({ friendsWithLastMsg, userId }) => {
                 </h4>
                 <p className="mt-1 max-w-md">
                     <span className="text-zinc-400">
-                        {friend.lastMessage.senderId === userId ? 'You: ' : ''}
+                        {friend?.lastMessage?.senderId === userId ? 'You: ' : ''}
                     </span>
-                    {friend.lastMessage.text}
+                    {friend?.lastMessage?.text}
                 </p>
             </div>
             </Link>
