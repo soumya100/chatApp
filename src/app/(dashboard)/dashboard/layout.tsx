@@ -1,13 +1,15 @@
+import MobileChatLayout from '@/common/MobileChatLayout';
+import DashBoardLayoutIndex from '@/components/dashboardLayout';
 import DashboardLayout from '@/components/dashboardLayout';
 import { getFriendsByUserId } from '@/helpers/getFriendsByUserId';
 import { fetchRedis } from '@/helpers/redis';
 import { authOptions } from '@/lib/auth';
 import { getServerSession } from 'next-auth';
 import { notFound } from 'next/navigation';
-import { ReactNode } from 'react'
+import { ReactNode, useState } from 'react'
 
 interface LayoutProps {
-    children: ReactNode;
+    children: ReactNode
 }
 
 
@@ -26,16 +28,10 @@ const Layout = async ({ children }: LayoutProps) => {
     const friends = await getFriendsByUserId(session.user.id)
 
 
-    return <div className='w-full flex h-screen'>
-        <DashboardLayout profileImage={session.user.image || ''}
-            profileName={session.user.name || ''}
-            profileEmail={session.user.email || ''}
-            sessionId={session.user.id || ''}
-            unseenFriendRequests={+unseenFriendRequestCount}
-            friends={friends}
-        />
+    return <DashBoardLayoutIndex friends={friends} profileEmail={session.user.email || ''} profileImage={session.user.image || ''} profileName={session.user.name || ''}
+     sessionId={session.user.id || ''} unseenFriendRequests={unseenFriendRequestCount} >
         {children}
-    </div>
+    </DashBoardLayoutIndex>
 }
 
 export default Layout

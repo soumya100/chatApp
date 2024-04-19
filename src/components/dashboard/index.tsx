@@ -15,7 +15,7 @@ interface DashboardProps {
 }
 
 const Dashboard: FC<DashboardProps> = ({ friendsWithLastMsg, userId }) => {
-    return <div className='container py-12'>
+    return <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12'>
         <h1 className='font-bold text-5xl mb-8'>
             Recent Chats
         </h1>
