@@ -1,8 +1,8 @@
 "use client"
 import { MessageCircleCode, UserPlus } from 'lucide-react'
 import Link from 'next/link'
-import { FC, useState } from 'react'
-import { Button, Dialog, SignOutButton } from '@/common'
+import { Dispatch, FC, SetStateAction, useState } from 'react'
+import { Button, DialogUI, SignOutButton } from '@/common'
 import Image from 'next/image'
 import FriendRequestsSideBarOption from '../FriendRequestSideBarOption'
 import AddFriendButton from '../dashboard/AddFriendButton'
@@ -17,11 +17,12 @@ interface dashBoardLayoutProps {
   friends: User[]
   openAddFriendModal: boolean
   handleModalStateOpen(): void
-  handleModalStateClose(): void
+  handleModalStateClose: Dispatch<SetStateAction<boolean>>
+  handleCloseButtonModal(): void
 }
 
 const DashboardLayout: FC<dashBoardLayoutProps> = ({ profileImage, profileName, profileEmail,sessionId, 
-  unseenFriendRequests, friends, handleModalStateClose, handleModalStateOpen, openAddFriendModal }) => {
+  unseenFriendRequests, friends, handleModalStateClose, handleModalStateOpen, openAddFriendModal, handleCloseButtonModal }) => {
 
   return <>
     <div className="hidden md:flex h-full w-full min-w-[22rem] max-w-[22rem] grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white px-6">
@@ -88,10 +89,9 @@ const DashboardLayout: FC<dashBoardLayoutProps> = ({ profileImage, profileName, 
     </div>
 
     {/* add friends dialog box */}
-   <Dialog open={openAddFriendModal} closeHandler={handleModalStateClose}
-      className='shadow-md py-5 rounded-lg backdrop:bg-black/20 w-[25%] flex justify-center flex-col items-center' title='Add friend'>
-      <AddFriendButton closeModalHandler={handleModalStateClose} />
-    </Dialog>
+   <DialogUI openDialog={openAddFriendModal} closeHandler={handleModalStateClose} title='Add friend'>
+      <AddFriendButton closeModalHandler={handleCloseButtonModal} />
+    </DialogUI>
   </>
 }
 export default DashboardLayout

@@ -1,38 +1,52 @@
 "use client"
+import { Dialog, Transition } from '@headlessui/react'
 import { X } from 'lucide-react'
-import { DialogHTMLAttributes, FC, KeyboardEvent, ReactNode, useEffect, useLayoutEffect, useRef } from 'react'
+import { Dispatch, FC, Fragment, ReactNode, SetStateAction } from 'react'
 
-interface DialogProps extends DialogHTMLAttributes<HTMLDialogElement> {
+interface DialogProps {
   children: ReactNode,
-  closeHandler(): void
+  closeHandler: Dispatch<SetStateAction<boolean>>
+  openDialog: boolean,
+  title: string
 }
 
-const Dialog: FC<DialogProps> = ({ children, className, open, onClick, closeHandler, title, ...props }) => {
+const DialogUI: FC<DialogProps> = ({ children, closeHandler, openDialog }) => {
 
-  const dialogRef = useRef<HTMLDialogElement>(null)
-  useLayoutEffect(() => {
-    if (dialogRef.current && open=== true)
-      dialogRef.current.showModal()
-  }, [open])
 
-  useEffect(() => {
-    if (dialogRef.current && open === false)
-      dialogRef.current.close();
-  }, [open]);
+  return <Transition.Root show={openDialog} as={Fragment}>
+    <Dialog as="div" className="relative z-10" onClose={closeHandler}>
+      <Transition.Child
+        as={Fragment}
+        enter="ease-out duration-300"
+        enterFrom="opacity-0"
+        enterTo="opacity-100"
+        leave="ease-in duration-200"
+        leaveFrom="opacity-100"
+        leaveTo="opacity-0"
+      >
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+      </Transition.Child>
 
-  const onEscPress=(e: KeyboardEvent<HTMLDialogElement>)=>{
-    if(e.key.toLowerCase()==='escape'){
-      closeHandler()
-    }
-  }
-
-  return open && <dialog className={className} ref={dialogRef} onKeyDown={onEscPress} {...props}>
-    <div className='flex justify-end w-full pr-3'>
-      <X onClick={closeHandler} className='cursor-pointer text-red-500' size={20} />
-    </div>
-    {children}
-  </dialog>
+      <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+        <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+            enterTo="opacity-100 translate-y-0 sm:scale-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+            leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+          >
+            <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg p-10">
+              {children}
+            </Dialog.Panel>
+          </Transition.Child>
+        </div>
+      </div>
+    </Dialog>
+  </Transition.Root>
 
 }
 
-export default Dialog
+export default DialogUI

@@ -22,10 +22,11 @@ const DashBoardLayoutIndex: FC<DashBoardLayoutIndexProps> = ({ children, friends
     setopenAddFriendModal(true)
   }
 
-  //handle modal close
-  const handleModalStateClose = () => {
+   //handle modal close
+   const handleModalStateClose = () => {
     setopenAddFriendModal(false)
   }
+
   return <div className='w-full flex h-screen'>
     <div className="md:hidden">
       <MobileChatLayout profileImage={profileImage}
@@ -45,7 +46,8 @@ const DashBoardLayoutIndex: FC<DashBoardLayoutIndexProps> = ({ children, friends
         friends={friends}
       openAddFriendModal={openAddFriendModal}
       handleModalStateOpen={handleModalStateOpen}
-      handleModalStateClose={handleModalStateClose}
+      handleModalStateClose={setopenAddFriendModal}
+      handleCloseButtonModal={handleModalStateClose}
     />
     <aside className='max-h-screen max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-12 w-full'>
       {children}
