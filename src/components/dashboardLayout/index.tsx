@@ -36,6 +36,7 @@ const DashBoardLayoutIndex: FC<DashBoardLayoutIndexProps> = ({ children, friends
         unseenFriendRequests={+unseenFriendRequests}
         friends={friends}
         handleModalStateOpen={handleModalStateOpen}
+        openAddFriendModal={openAddFriendModal}
       />
     </div>
     <DashboardLayout profileImage={profileImage}

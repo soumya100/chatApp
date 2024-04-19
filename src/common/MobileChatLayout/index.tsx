@@ -1,5 +1,5 @@
 'use client'
-import { FC, Fragment, useState } from 'react'
+import { FC, Fragment, useEffect, useState } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
 import { Menu, MessageCircleCode, UserPlus, X } from 'lucide-react'
 import Link from 'next/link';
@@ -17,11 +17,16 @@ interface MobileChatLayoutProps {
   unseenFriendRequests: number,
   friends: User[]
   handleModalStateOpen(): void
+  openAddFriendModal: boolean
 }
 
 const MobileChatLayout: FC<MobileChatLayoutProps> = ({friends,profileEmail, profileImage, profileName, 
-  sessionId, unseenFriendRequests, handleModalStateOpen }) => {
+  sessionId, unseenFriendRequests, handleModalStateOpen,openAddFriendModal }) => {
   const [open, setOpen] = useState<boolean>(false);
+
+  useEffect(()=>{
+    setOpen(false)
+  },[openAddFriendModal])
   return <div className='fixed bg-zinc-50 border-b border-zinc-200 top-0 inset-x-0 py-2 px-4'>
     <div className='w-full flex justify-between items-center'>
       <Link href={`/dashboard`} className='flex h-14 shrink-0 items-center gap-5'>
