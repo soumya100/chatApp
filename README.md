@@ -30,15 +30,16 @@ To run NextChat locally, follow these steps:
 
 3. Install dependencies:
 
-   ```bash
-   yarn install
-   ```
    if you're using yarn (my preference)
 
    ```bash
+   yarn install
+   ```
+
+   if you're using npm
+   ```bash
    npm i 
    ```
-   if you're using npm
 
 4. Set up Redis with Upstash and configure environment variables.
 

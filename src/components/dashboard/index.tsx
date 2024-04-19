@@ -40,6 +40,7 @@ const Dashboard: FC<DashboardProps> = ({ friendsWithLastMsg, userId }) => {
                         />
                     </div>
                 </div>
+
                 <h4 className="text-lg font-semibold">
                     {friend.name}
                 </h4>
