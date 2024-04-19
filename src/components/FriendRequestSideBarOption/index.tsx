@@ -18,18 +18,27 @@ const FriendRequestsSideBarOption: FC<FriendRequestsSideBarOptionProps> = ({init
         pusherClient.subscribe(
             toPusherKey(`user:${sessionId}:incoming_friend_requests`) //listening to the changes
           )
-    
+          
+        pusherClient.subscribe(
+          toPusherKey(`user:${sessionId}:friends`)
+        )
           const friendRequestHandler=()=>{
             setUnSeenRequests((prev)=> prev + 1)
           }
+
+          const addedFriendHandler=()=>{
+            setUnSeenRequests((prev)=> prev - 1)
+          }
     
           pusherClient.bind('incoming_friend_requests', friendRequestHandler) // telling pusher what to do when the changes occurs
-    
+          pusherClient.bind('new_friend', addedFriendHandler)
     
           return()=> {
             //cleaning up the events for optimising performances
             pusherClient.unsubscribe(toPusherKey(`user:${sessionId}:incoming_friend_requests`))
             pusherClient.unbind('incoming_friend_requests', friendRequestHandler)
+            pusherClient.unsubscribe(toPusherKey(`user:${sessionId}:friends`))
+            pusherClient.unbind('new_friend', addedFriendHandler)
           }
     
     },[sessionId])

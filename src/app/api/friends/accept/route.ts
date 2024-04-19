@@ -36,16 +36,25 @@ export async function POST(req: Request) {
             return new Response("No friend request", { status: 400 })
         }
 
+        const [userRaw, friendRaw] = (await Promise.all([
+            fetchRedis('get', `user:${session.user.id}`),
+            fetchRedis('get', `user:${idToAdd}`)
+        ])) as [string, string]
+
+        const user = JSON.parse(userRaw) as User
+        const friend = JSON.parse(friendRaw) as User
+
         //notify added user
-        pusherServer.trigger(toPusherKey(`user:${idToAdd}:friends`), 'new_friend', {})
 
+        await Promise.all([
+            pusherServer.trigger(toPusherKey(`user:${idToAdd}:friends`), 'new_friend', user),
+            pusherServer.trigger(toPusherKey(`user:${session.user.id}:friends`), 'new_friend', friend),
+            db.sadd(`user:${session.user.id}:friends`, idToAdd), //adding friend to the users friend list
+            db.sadd(`user:${idToAdd}:friends`, session.user.id), //adding userid to the requesters friendlist 
+            db.srem(`user:${session.user.id}:incoming_friend_requests`, idToAdd)  //removing the id from the incoming friendlist database
 
-        await db.sadd(`user:${session.user.id}:friends`, idToAdd) //adding friend to the users friend list
-
-        await db.sadd(`user:${idToAdd}:friends`, session.user.id) //adding userid to the requesters friendlist 
-
-        await db.srem(`user:${session.user.id}:incoming_friend_requests`, idToAdd)  //removing the id from the incoming friendlist database
-
+        ])
+        
         return new Response('OK')
 
     } catch (error) {
