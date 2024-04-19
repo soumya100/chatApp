@@ -40,11 +40,10 @@ const Dashboard: FC<DashboardProps> = ({ friendsWithLastMsg, userId }) => {
                         />
                     </div>
                 </div>
-
-            <div>
                 <h4 className="text-lg font-semibold">
                     {friend.name}
                 </h4>
+            <div>
                 <p className="mt-1 max-w-md">
                     <span className="text-zinc-400">
                         {friend?.lastMessage?.senderId === userId ? 'You: ' : ''}
