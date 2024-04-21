@@ -48,7 +48,7 @@ const page = async ({ params }: pageProps) => {
   //checking if the userid is either of thw two of above
   if (user.id !== userId1 && user.id !== userId2) notFound()
 
-  /*ternery for getting the chatPartnerId i.e if the urrent logged in userid is not 
+  /*ternery for getting the chatPartnerId i.e if the current logged in userid is not 
   equal to userId1 then the partner will be userId2 and vice-versa*/
   const chatPartnerId = user.id === userId1 ? userId2 : userId1
 

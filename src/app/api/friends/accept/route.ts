@@ -45,14 +45,12 @@ export async function POST(req: Request) {
         const friend = JSON.parse(friendRaw) as User
 
         //notify added user
-
         await Promise.all([
             pusherServer.trigger(toPusherKey(`user:${idToAdd}:friends`), 'new_friend', user),
             pusherServer.trigger(toPusherKey(`user:${session.user.id}:friends`), 'new_friend', friend),
             db.sadd(`user:${session.user.id}:friends`, idToAdd), //adding friend to the users friend list
             db.sadd(`user:${idToAdd}:friends`, session.user.id), //adding userid to the requesters friendlist 
             db.srem(`user:${session.user.id}:incoming_friend_requests`, idToAdd)  //removing the id from the incoming friendlist database
-
         ])
         
         return new Response('OK')
