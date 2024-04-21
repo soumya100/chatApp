@@ -29,7 +29,7 @@ const page=async ({}) => {
         })
     )
 
-    console.log(incomingFriendRequests, '* incomingFriendRequests' )
+    // console.log(incomingFriendRequests, '* incomingFriendRequests' )
 
   return <FriendRequests incomingFriendRequests={incomingFriendRequests} sessionId={session.user.id} />
 }
