@@ -2,7 +2,7 @@
 
 NextChat is a real-time chat application built with Next.js, utilizing Redis as a database with Upstash for persistence. This application allows users to engage in seamless, responsive chat interactions across various devices.
 
-![NextChat live Preview](https://chat-app-ten-cyan.vercel.app/)
+![NextChat live Preview](https://chat-app-git-main-soumya100s-projects.vercel.app/)
 
 ## Features
 
