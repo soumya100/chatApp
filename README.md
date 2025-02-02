@@ -64,6 +64,7 @@ NextChat requires the following environment variables to be set:
 - `NEXT_PUBLIC_PUSHER_APP_KEY`:  Pusher app key.
 - `PUSHER_APP_SECRET`: Pusher app secret key. 
 - `PUSHER_APP_CLUSTER`: Pusher app cluster.
+- `NEXTAUTH_URL`: if deployed, add domain name else add http://localhost:3000
 
 ## Contributing
 
