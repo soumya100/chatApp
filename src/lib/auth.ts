@@ -31,7 +31,14 @@ export const authOptions: NextAuthOptions ={
     providers:[
         GoogleProvider({
             clientId: getGoogleCredentials().clientId,
-            clientSecret: getGoogleCredentials().clientSecret
+            clientSecret: getGoogleCredentials().clientSecret,
+            authorization:{
+                params: {
+                    redirect_uri: process.env.NODE_ENV === 'production'
+                      ? 'https://chatapp-production-1557.up.railway.app/api/auth/callback/google'
+                      : 'http://localhost:3000/api/auth/callback/google'
+                  }
+            }
         })
     ],
     callbacks:{
