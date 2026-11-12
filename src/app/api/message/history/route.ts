@@ -36,11 +36,11 @@ export async function GET(req: Request) {
 
         if (cursor) {
             // Fetch older messages strictly before cursor timestamp (newest of the old first)
-            rawMessages = await db.zrevrangebyscore(
+            rawMessages = await db.zrange(
                 `chat:${chatId}:messages`,
-                `(${cursor}`,
+                `(${cursor}` as `(${number}`,
                 '-inf',
-                { offset: 0, count: limit }
+                { byScore: true, rev: true, offset: 0, count: limit }
             )
         } else {
             // Initial fetch of latest messages: get slice from end, then reverse
