@@ -27,10 +27,11 @@ const AddFriendButton: FC<AddFriendProps> = ({ closeModalHandler }) => {
 
   const addFriend = async (email: string) => {
     try {
-      const validatedEmail = addFriendValidator.parse({ email })
+      const trimmedEmail = email.trim().toLowerCase()
+      addFriendValidator.parse({ email: trimmedEmail })
 
       await axios.post('/api/friends/add', {
-        email: validatedEmail,
+        email: trimmedEmail,
       })
       closeModalHandler()
       toast.success('Friend request sent successfully')
@@ -41,7 +42,7 @@ const AddFriendButton: FC<AddFriendProps> = ({ closeModalHandler }) => {
       }
 
       if (error instanceof AxiosError) {
-        setError('email', { message: error.response?.data })
+        setError('email', { message: error.response?.data || 'Failed to send request' })
         return
       }
 
@@ -53,12 +54,12 @@ const AddFriendButton: FC<AddFriendProps> = ({ closeModalHandler }) => {
     addFriend(data.email)
   }
 
-  return <main className='px-5 w-full'>
-    <h1 className="font-bold text-2xl mb-4">
+  return <main className='px-2 w-full'>
+    <h1 className="font-bold text-2xl mb-4 text-gray-900 dark:text-gray-100">
       Add a friend
     </h1>
     <form onSubmit={handleSubmit(onSubmit)} className="max-w-sm">
-      <label htmlFor="email" className='block text-sm font-medium leading-6 text-grey-900'>
+      <label htmlFor="email" className='block text-sm font-medium leading-6 text-gray-700 dark:text-gray-300'>
         Add friend by E-mail
       </label>
       <div className="mt-2 flex flex-col md:flex-row gap-4">
@@ -66,7 +67,7 @@ const AddFriendButton: FC<AddFriendProps> = ({ closeModalHandler }) => {
           {...register('email')}
           type="text"
           placeholder='you@example.com'
-          className="block w-full rounded-md border-0 py-1 5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" />
+          className="block w-full rounded-md border-0 py-1.5 text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800 shadow-xs ring-1 ring-inset ring-gray-300 dark:ring-zinc-700 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" />
         <Button>Add</Button>
       </div>
       <small className='mt-1 text-xs text-red-600'>{errors.email?.message}</small>

@@ -10,10 +10,19 @@ interface DashBoardLayoutIndexProps {
   profileEmail: string,
   sessionId: string,
   unseenFriendRequests: number,
-  friends: User[]
+  friends: User[],
+  initialUnreadCounts?: Record<string, number>
 }
 
-const DashBoardLayoutIndex: FC<DashBoardLayoutIndexProps> = ({ children, friends, profileEmail, profileImage, profileName, sessionId, unseenFriendRequests
+const DashBoardLayoutIndex: FC<DashBoardLayoutIndexProps> = ({ 
+  children, 
+  friends, 
+  profileEmail, 
+  profileImage, 
+  profileName, 
+  sessionId, 
+  unseenFriendRequests,
+  initialUnreadCounts = {}
 }) => {
   const [openAddFriendModal, setopenAddFriendModal] = useState(false)
 
@@ -27,7 +36,7 @@ const DashBoardLayoutIndex: FC<DashBoardLayoutIndexProps> = ({ children, friends
     setopenAddFriendModal(false)
   }
 
-  return <div className='w-full flex h-screen'>
+  return <div className='w-full flex h-screen bg-white dark:bg-zinc-950 text-gray-900 dark:text-gray-100'>
     <div className="md:hidden">
       <MobileChatLayout profileImage={profileImage}
         profileName={profileName}
@@ -37,6 +46,7 @@ const DashBoardLayoutIndex: FC<DashBoardLayoutIndexProps> = ({ children, friends
         friends={friends}
         handleModalStateOpen={handleModalStateOpen}
         openAddFriendModal={openAddFriendModal}
+        initialUnreadCounts={initialUnreadCounts}
       />
     </div>
     <DashboardLayout profileImage={profileImage}
@@ -45,12 +55,13 @@ const DashBoardLayoutIndex: FC<DashBoardLayoutIndexProps> = ({ children, friends
         sessionId={sessionId}
         unseenFriendRequests={+unseenFriendRequests}
         friends={friends}
-      openAddFriendModal={openAddFriendModal}
-      handleModalStateOpen={handleModalStateOpen}
-      handleModalStateClose={setopenAddFriendModal}
-      handleCloseButtonModal={handleModalStateClose}
+        openAddFriendModal={openAddFriendModal}
+        handleModalStateOpen={handleModalStateOpen}
+        handleModalStateClose={setopenAddFriendModal}
+        handleCloseButtonModal={handleModalStateClose}
+        initialUnreadCounts={initialUnreadCounts}
     />
-    <aside className='max-h-screen max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-12 w-full'>
+    <aside className='max-h-screen max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-12 w-full overflow-y-auto bg-gray-50/50 dark:bg-zinc-950'>
       {children}
     </aside>
   </div>

@@ -1,24 +1,26 @@
-
-//helper functions => these are made cause nextjs have some weird cache behaviours. to avoid those we make helper functions
-
 const upstashRedisRestUrl = process.env.UPSTASH_REDIS_REST_URL
 const authToken = process.env.UPSTASH_REDIS_REST_TOKEN
 
-type Command = 'zrange' | 'sismember' | 'get' | 'smembers' //defining type of commands
-
+type Command = 'zrange' | 'sismember' | 'get' | 'smembers'
 
 export async function fetchRedis(command: Command, ...args: (string | number)[]) {
-    const commandUrl = `${upstashRedisRestUrl}/${command}/${args.join('/')}`
+    if (!upstashRedisRestUrl || !authToken) {
+        throw new Error('Missing Upstash Redis environment variables')
+    }
 
-    const response = await fetch(commandUrl, {
+    // Use POST with JSON array body to avoid URL path concatenation issues with slashes or special characters
+    const response = await fetch(upstashRedisRestUrl, {
+        method: 'POST',
         headers: {
-            Authorization: `Bearer ${authToken}`
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
         },
+        body: JSON.stringify([command, ...args]),
         cache: 'no-store',
     })
 
     if (!response.ok) {
-        throw new Error(`Error executing Redis command:${response.statusText}`)
+        throw new Error(`Error executing Redis command: ${response.statusText}`)
     }
 
     const data = await response.json()

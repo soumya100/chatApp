@@ -37,7 +37,10 @@ export default withAuth(
 
         //checking if they are in home page
         if(pathname === '/'){
-            return NextResponse.redirect(new URL('/login', req.url)) //redirecting them to login page
+            if(isAuth){
+                return NextResponse.redirect(new URL('/dashboard', req.url))
+            }
+            return NextResponse.redirect(new URL('/login', req.url))
         }
     },{
         callbacks:{
@@ -47,6 +50,6 @@ export default withAuth(
         },
     })
 
-// export const config= {
-//     matcher: ['/', 'login', /^\/dashboard(\/.*)?$/]
-// }
+export const config= {
+    matcher: ['/', '/login', '/dashboard/:path*']
+}

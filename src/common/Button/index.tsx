@@ -9,8 +9,8 @@ import { ButtonHTMLAttributes, FC } from 'react'
     {
         variants: {
             variant: {
-                default: '!bg-slate-900 !text-white hover:!bg-slate-800',
-                ghost: 'bg-transparent hover:text-slate-900 hover:bg-slate-200'
+                default: 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 shadow-xs',
+                ghost: 'bg-transparent text-gray-700 dark:text-gray-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
             },
             size:{
                 default: 'h-10 py-2 px-4',

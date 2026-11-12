@@ -5,6 +5,7 @@ import { Menu, MessageCircleCode, UserPlus, X } from 'lucide-react'
 import Link from 'next/link';
 import Button, { buttonVariants } from '../Button';
 import SignOutButton from '../SignoutButton';
+import ThemeToggle from '../ThemeToggle';
 import Image from 'next/image';
 import FriendRequestsSideBarOption from '@/components/FriendRequestSideBarOption';
 import ChatList from '@/components/dashboardLayout/ChatList';
@@ -15,13 +16,14 @@ interface MobileChatLayoutProps {
   profileEmail: string,
   sessionId: string,
   unseenFriendRequests: number,
-  friends: User[]
-  handleModalStateOpen(): void
-  openAddFriendModal: boolean
+  friends: User[],
+  handleModalStateOpen(): void,
+  openAddFriendModal: boolean,
+  initialUnreadCounts?: Record<string, number>
 }
 
 const MobileChatLayout: FC<MobileChatLayoutProps> = ({friends,profileEmail, profileImage, profileName, 
-  sessionId, unseenFriendRequests, handleModalStateOpen,openAddFriendModal }) => {
+  sessionId, unseenFriendRequests, handleModalStateOpen,openAddFriendModal, initialUnreadCounts = {} }) => {
   const [open, setOpen] = useState<boolean>(false);
 
   useEffect(()=>{
@@ -90,7 +92,7 @@ const MobileChatLayout: FC<MobileChatLayoutProps> = ({friends,profileEmail, prof
                   <div className="flex h-full flex-col overflow-y-scroll bg-white py-6 shadow-xl">
                     <div className="px-4 sm:px-6">
                       <Dialog.Title className="text-base font-semibold leading-6 text-gray-900">
-                        Panel title
+                        Navigation Menu
                       </Dialog.Title>
                     </div>
                     <div className="relative mt-6 flex-1 px-4 sm:px-6">
@@ -102,7 +104,7 @@ const MobileChatLayout: FC<MobileChatLayoutProps> = ({friends,profileEmail, prof
                         <ul role='list' className='flex flex-1 flex-col gap-y-7'>
                           <div className='space-y-5'>
                           <li>
-                            <ChatList friends={friends} sessionId={sessionId} />
+                            <ChatList friends={friends} sessionId={sessionId} initialUnreadCounts={initialUnreadCounts} />
                           </li>
                           <li>
                             <div className="text-xs font-semibold leading-6 text-gray-400">
@@ -142,7 +144,10 @@ const MobileChatLayout: FC<MobileChatLayoutProps> = ({friends,profileEmail, prof
                                 <span aria-hidden>{profileName}</span>
                                 <span className='text-xs text-zinc-400' aria-hidden>{profileEmail}</span>
                               </div>
-                              <SignOutButton className='h-full aspect-square' />
+                              <div className="flex items-center gap-1 ml-auto">
+                                <ThemeToggle />
+                                <SignOutButton className='h-full aspect-square' />
+                              </div>
                             </div>
                           </li>
                         </ul>
