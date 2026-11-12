@@ -44,13 +44,17 @@ export async function POST(req: Request) {
         const user = JSON.parse(userRaw) as User
         const friend = JSON.parse(friendRaw) as User
 
-        //notify added user
+        // Persist friendship and remove request in database first
         await Promise.all([
-            pusherServer.trigger(toPusherKey(`user:${idToAdd}:friends`), 'new_friend', user),
-            pusherServer.trigger(toPusherKey(`user:${session.user.id}:friends`), 'new_friend', friend),
-            db.sadd(`user:${session.user.id}:friends`, idToAdd), //adding friend to the users friend list
-            db.sadd(`user:${idToAdd}:friends`, session.user.id), //adding userid to the requesters friendlist 
-            db.srem(`user:${session.user.id}:incoming_friend_requests`, idToAdd)  //removing the id from the incoming friendlist database
+            db.sadd(`user:${session.user.id}:friends`, idToAdd),
+            db.sadd(`user:${idToAdd}:friends`, session.user.id),
+            db.srem(`user:${session.user.id}:incoming_friend_requests`, idToAdd)
+        ])
+
+        // Notify both users in real-time on private channels
+        await Promise.all([
+            pusherServer.trigger(toPusherKey(`private-user:${idToAdd}:friends`), 'new_friend', user),
+            pusherServer.trigger(toPusherKey(`private-user:${session.user.id}:friends`), 'new_friend', friend),
         ])
         
         return new Response('OK')

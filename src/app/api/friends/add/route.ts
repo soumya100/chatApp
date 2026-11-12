@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
 import { addFriendValidator } from "@/lib/validations/add-friends"
+import { rateLimit } from "@/lib/ratelimit"
 import { getServerSession } from "next-auth"
 import { z } from "zod"
 
@@ -11,22 +12,36 @@ export async function POST(req: Request) {
     try {
         const body = await req.json()
 
-        const { email: emailToAdd } = addFriendValidator.parse(body.email)
+        const session = await getServerSession(authOptions)
 
-       const idToAdd= await fetchRedis('get', `user:email:${emailToAdd}`) as string
+        //session checking
+        if (!session?.user?.id) {
+            return new Response('Unauthorized', { status: 401 })
+        }
 
+        // Rate limit: max 5 friend requests per minute
+        const { success: isAllowed } = await rateLimit(session.user.id, 'add_friend', {
+            limit: 5,
+            windowSeconds: 60
+        })
+        if (!isAllowed) {
+            return new Response('Too many friend requests sent. Please wait a minute before trying again.', {
+                status: 429,
+                headers: { 'Retry-After': '60' }
+            })
+        }
 
+        const rawEmail = typeof body === 'object' && body !== null && typeof body.email === 'object' && body.email !== null
+            ? body.email.email
+            : body?.email ?? body
+
+        const { email: emailToAdd } = addFriendValidator.parse({ email: rawEmail })
+
+        const idToAdd= await fetchRedis('get', `user:email:${emailToAdd}`) as string
 
         //if this person doesnt exist
         if (!idToAdd) {
             return new Response('This person does not exist.', {status: 400})
-        }
-
-        const session = await getServerSession(authOptions)
-
-        //session checking
-        if (!session) {
-            return new Response('Unauthorized', { status: 401 })
         }
 
         //checking if the user logged in is trying to add the same person as friend
@@ -52,9 +67,12 @@ export async function POST(req: Request) {
             return new Response('Already friends with this user', { status: 400})
         }
 
-        //valid request, sending friend request
-       await pusherServer.trigger(
-            toPusherKey(`user:${idToAdd}:incoming_friend_requests`),  //sending real time notifications via socket
+        //valid request, save to database first
+        await db.sadd(`user:${idToAdd}:incoming_friend_requests`, session.user.id)
+
+        //notify added user in real time via private channel
+        await pusherServer.trigger(
+            toPusherKey(`private-user:${idToAdd}:incoming_friend_requests`),
             'incoming_friend_requests',
             {
                 senderId: session.user.id,
@@ -64,7 +82,6 @@ export async function POST(req: Request) {
             }
         )
 
-       await db.sadd(`user:${idToAdd}:incoming_friend_requests`, session.user.id)
         return new Response('OK')
 
     } catch (error) {

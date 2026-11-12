@@ -1,67 +1,81 @@
 import Chat from '@/components/Chat';
-import { fetchRedis } from '@/helpers/redis';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { messageArrayValidator } from '@/lib/validations/message';
+import { messageValidator } from '@/lib/validations/message';
 import { getServerSession } from 'next-auth';
 import { notFound } from 'next/navigation';
 
-interface pageProps {
+interface PageProps {
   params: {
     chatId: string,
   }
 }
-async function getChatMessages(chatId: string) {
+
+async function getChatMessages(chatId: string): Promise<Message[]> {
   try {
-    const result: string[] = await fetchRedis('zrange', `chat:${chatId}:messages`, 0, -1)
+    // Fetch only the latest 30 messages initially (bounded query for fast TTFB)
+    const result = (await db.zrange(`chat:${chatId}:messages`, -30, -1)) as unknown[]
+    const messages: Message[] = []
 
-    const dbMessages = result.map((message) => JSON.parse(message) as Message)
-
-    //reversing the array to show the recent chats
-    const reversedDbMessages = dbMessages.reverse()
-
-    //validating and parsing the reversed messages
-    const messages = messageArrayValidator.parse(reversedDbMessages)
+    // Traverse in reverse so messages[0] is the most recent (compatible with flex-col-reverse)
+    for (let i = result.length - 1; i >= 0; i--) {
+      const raw = result[i]
+      try {
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+        const validated = messageValidator.parse(parsed)
+        messages.push(validated)
+      } catch {
+        // Skip malformed message records safely
+      }
+    }
 
     return messages
   } catch (error) {
-    notFound()
+    return []
   }
 }
 
-const page = async ({ params }: pageProps) => {
-
+const page = async ({ params }: PageProps) => {
   const { chatId } = params;
 
   const session = await getServerSession(authOptions)
-
-  if (!session) notFound()
+  if (!session) return notFound()
 
   const { user } = session;
 
+  // Split and validate user IDs
+  const ids = chatId.split('--')
+  if (ids.length !== 2) return notFound()
+  const [userId1, userId2] = ids
 
+  // Verify the current user is a participant
+  if (user.id !== userId1 && user.id !== userId2) return notFound()
 
-  //taking user id of the chat sender and chat reciever and splitting it
-  const [userId1, userId2] = chatId.split('--')
-
-
-  //checking if the userid is either of thw two of above
-  if (user.id !== userId1 && user.id !== userId2) notFound()
-
-  /*ternery for getting the chatPartnerId i.e if the current logged in userid is not 
-  equal to userId1 then the partner will be userId2 and vice-versa*/
   const chatPartnerId = user.id === userId1 ? userId2 : userId1
 
-  const chatPartnerRaw = await fetchRedis('get', `user:${chatPartnerId}`) as string
-  const chatPartner = JSON.parse(chatPartnerRaw) as User
+  // Verify both users are currently friends
+  const isFriend = (await db.sismember(`user:${user.id}:friends`, chatPartnerId)) as 0 | 1
+  if (!isFriend) return notFound()
+
+  // Fetch partner profile safely
+  const chatPartnerRaw = await db.get(`user:${chatPartnerId}`)
+  if (!chatPartnerRaw) return notFound()
+
+  const chatPartner = (typeof chatPartnerRaw === 'string'
+    ? JSON.parse(chatPartnerRaw)
+    : chatPartnerRaw) as User
 
   const initialMessages = await getChatMessages(chatId)
 
-  return <Chat chatPartner={chatPartner} chatId={chatId}
-    initialMessages={initialMessages}
-    sessionId={session.user.id}
-    sessionImg={session.user.image || ''}
-  />
+  return (
+    <Chat 
+      chatPartner={chatPartner} 
+      chatId={chatId}
+      initialMessages={initialMessages}
+      sessionId={session.user.id}
+      sessionImg={session.user.image || ''}
+    />
+  )
 }
 
 export default page
