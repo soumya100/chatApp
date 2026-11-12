@@ -2,6 +2,7 @@
 import MobileChatLayout from '@/common/MobileChatLayout'
 import { FC, ReactNode, useState } from 'react'
 import DashboardLayout from './DashBoardLayout'
+import AvatarModal from './AvatarModal'
 
 interface DashBoardLayoutIndexProps {
   children: ReactNode
@@ -25,31 +26,41 @@ const DashBoardLayoutIndex: FC<DashBoardLayoutIndexProps> = ({
   initialUnreadCounts = {}
 }) => {
   const [openAddFriendModal, setopenAddFriendModal] = useState(false)
+  const [openAvatarModal, setOpenAvatarModal] = useState(false)
+  const [currentAvatar, setCurrentAvatar] = useState(profileImage)
 
-  //handle modal open
+  // handle modal open
   const handleModalStateOpen = () => {
     setopenAddFriendModal(true)
   }
 
-   //handle modal close
-   const handleModalStateClose = () => {
+  // handle modal close
+  const handleModalStateClose = () => {
     setopenAddFriendModal(false)
   }
 
-  return <div className='w-full flex h-screen bg-white dark:bg-zinc-950 text-gray-900 dark:text-gray-100'>
-    <div className="md:hidden">
-      <MobileChatLayout profileImage={profileImage}
-        profileName={profileName}
-        profileEmail={profileEmail}
-        sessionId={sessionId}
-        unseenFriendRequests={+unseenFriendRequests}
-        friends={friends}
-        handleModalStateOpen={handleModalStateOpen}
-        openAddFriendModal={openAddFriendModal}
-        initialUnreadCounts={initialUnreadCounts}
-      />
-    </div>
-    <DashboardLayout profileImage={profileImage}
+  const handleOpenAvatarModal = () => {
+    setOpenAvatarModal(true)
+  }
+
+  return (
+    <div className='w-full flex h-screen bg-white dark:bg-zinc-950 text-gray-900 dark:text-gray-100'>
+      <div className="md:hidden">
+        <MobileChatLayout 
+          profileImage={currentAvatar}
+          profileName={profileName}
+          profileEmail={profileEmail}
+          sessionId={sessionId}
+          unseenFriendRequests={+unseenFriendRequests}
+          friends={friends}
+          handleModalStateOpen={handleModalStateOpen}
+          openAddFriendModal={openAddFriendModal}
+          initialUnreadCounts={initialUnreadCounts}
+          onOpenAvatarModal={handleOpenAvatarModal}
+        />
+      </div>
+      <DashboardLayout 
+        profileImage={currentAvatar}
         profileName={profileName}
         profileEmail={profileEmail}
         sessionId={sessionId}
@@ -60,11 +71,23 @@ const DashBoardLayoutIndex: FC<DashBoardLayoutIndexProps> = ({
         handleModalStateClose={setopenAddFriendModal}
         handleCloseButtonModal={handleModalStateClose}
         initialUnreadCounts={initialUnreadCounts}
-    />
-    <aside className='max-h-screen max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-12 w-full overflow-y-auto bg-gray-50/50 dark:bg-zinc-950'>
-      {children}
-    </aside>
-  </div>
+        onOpenAvatarModal={handleOpenAvatarModal}
+      />
+      <aside className='max-h-screen max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-12 w-full overflow-y-auto bg-gray-50/50 dark:bg-zinc-950'>
+        {children}
+      </aside>
+
+      {/* Avatar Customization Modal */}
+      <AvatarModal
+        isOpen={openAvatarModal}
+        onClose={() => setOpenAvatarModal(false)}
+        currentImage={currentAvatar}
+        userName={profileName}
+        userEmail={profileEmail}
+        onAvatarUpdated={(newImage) => setCurrentAvatar(newImage)}
+      />
+    </div>
+  )
 }
 
 export default DashBoardLayoutIndex

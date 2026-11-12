@@ -24,9 +24,18 @@ const SignOutButton: FC<SignOutButtonProps> = ({...props}) => {
       }
     }
 
-  return <Button {...props} variant={'ghost'} onClick={logoutFunction}>
-   {isSignOut ? <Loader2 className='animate-spin h-4 w-4' /> : <LogOut className='w-4 h-4' />}
-  </Button>
+  return (
+    <Button
+      {...props}
+      variant={'ghost'}
+      onClick={logoutFunction}
+      isLoading={isSignOut}
+      aria-label={props['aria-label'] || 'Sign out of your account'}
+      title='Sign out'
+    >
+      <LogOut className='w-4 h-4' aria-hidden='true' />
+    </Button>
+  )
 }
 
 export default SignOutButton

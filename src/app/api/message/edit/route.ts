@@ -8,7 +8,7 @@ import { z } from "zod"
 const editValidator = z.object({
     messageId: z.string(),
     chatId: z.string(),
-    newText: z.string().min(1).max(2000).trim()
+    newText: z.string().max(2000).default('')
 })
 
 export async function POST(req: Request) {
@@ -21,9 +21,17 @@ export async function POST(req: Request) {
         const body = await req.json()
         const { messageId, chatId, newText } = editValidator.parse(body)
 
-        const [userId1, userId2] = chatId.split('--')
-        if (session.user.id !== userId1 && session.user.id !== userId2) {
-            return new Response('Unauthorized', { status: 401 })
+        if (chatId.startsWith('group--')) {
+            const groupId = chatId.replace('group--', '')
+            const isMember = (await db.sismember(`group:${groupId}:members`, session.user.id)) as 0 | 1
+            if (!isMember) {
+                return new Response('Unauthorized: You are not a member of this group', { status: 403 })
+            }
+        } else {
+            const [userId1, userId2] = chatId.split('--')
+            if (session.user.id !== userId1 && session.user.id !== userId2) {
+                return new Response('Unauthorized', { status: 401 })
+            }
         }
 
         const rawMembers = (await db.zrange(`chat:${chatId}:messages`, 0, -1)) as unknown[]
@@ -54,6 +62,10 @@ export async function POST(req: Request) {
 
         if (targetMessage.isDeleted) {
             return new Response('Cannot edit a deleted message', { status: 400 })
+        }
+
+        if (!targetMessage.mediaUrl && newText.trim().length === 0) {
+            return new Response('Message text cannot be empty', { status: 400 })
         }
 
         const updatedMessage: Message = {

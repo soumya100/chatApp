@@ -34,11 +34,11 @@ export const ThemeToggle: FC = () => {
     <button
       onClick={toggleTheme}
       type='button'
-      className='rounded-md p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors'
+      className='rounded-md p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500'
       title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      aria-label='Toggle theme'
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
     >
-      {isDark ? <Sun size={18} /> : <Moon size={18} />}
+      {isDark ? <Sun size={18} aria-hidden='true' /> : <Moon size={18} aria-hidden='true' />}
     </button>
   )
 }

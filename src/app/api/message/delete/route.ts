@@ -20,9 +20,17 @@ export async function POST(req: Request) {
         const body = await req.json()
         const { messageId, chatId } = deleteValidator.parse(body)
 
-        const [userId1, userId2] = chatId.split('--')
-        if (session.user.id !== userId1 && session.user.id !== userId2) {
-            return new Response('Unauthorized', { status: 401 })
+        if (chatId.startsWith('group--')) {
+            const groupId = chatId.replace('group--', '')
+            const isMember = (await db.sismember(`group:${groupId}:members`, session.user.id)) as 0 | 1
+            if (!isMember) {
+                return new Response('Unauthorized: You are not a member of this group', { status: 403 })
+            }
+        } else {
+            const [userId1, userId2] = chatId.split('--')
+            if (session.user.id !== userId1 && session.user.id !== userId2) {
+                return new Response('Unauthorized', { status: 401 })
+            }
         }
 
         // Fetch recent messages to locate the target message

@@ -1,12 +1,12 @@
 'use client'
 import { FC, Fragment, useEffect, useState } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
-import { Menu, MessageCircleCode, UserPlus, X } from 'lucide-react'
+import { Camera, Menu, MessageCircleCode, UserPlus, X } from 'lucide-react'
 import Link from 'next/link';
 import Button, { buttonVariants } from '../Button';
 import SignOutButton from '../SignoutButton';
 import ThemeToggle from '../ThemeToggle';
-import Image from 'next/image';
+import Avatar from '../Avatar';
 import FriendRequestsSideBarOption from '@/components/FriendRequestSideBarOption';
 import ChatList from '@/components/dashboardLayout/ChatList';
 
@@ -19,11 +19,12 @@ interface MobileChatLayoutProps {
   friends: User[],
   handleModalStateOpen(): void,
   openAddFriendModal: boolean,
-  initialUnreadCounts?: Record<string, number>
+  initialUnreadCounts?: Record<string, number>,
+  onOpenAvatarModal?: () => void
 }
 
 const MobileChatLayout: FC<MobileChatLayoutProps> = ({friends,profileEmail, profileImage, profileName, 
-  sessionId, unseenFriendRequests, handleModalStateOpen,openAddFriendModal, initialUnreadCounts = {} }) => {
+  sessionId, unseenFriendRequests, handleModalStateOpen,openAddFriendModal, initialUnreadCounts = {}, onOpenAvatarModal }) => {
   const [open, setOpen] = useState<boolean>(false);
 
   useEffect(()=>{
@@ -130,19 +131,39 @@ const MobileChatLayout: FC<MobileChatLayoutProps> = ({friends,profileEmail, prof
 
                           {/* your profile section */}
                           <li className="-mx-6 mt-auto flex items-center w-full justify-between">
-                            <div className="flex flex-1 items-center justify-between px-6 py-3 text-sm font-semibold leading-6 text-gray-900 w-full">
-                              <div className="relative h-8 w-8 bg-gray-50">
-                                <Image src={profileImage} alt={`profile image`} fill
-                                  referrerPolicy='no-referrer'
-                                  className='rounded-full'
+                            <div className="flex flex-1 items-center justify-between px-6 py-3 text-sm font-semibold leading-6 text-gray-900 dark:text-gray-100 w-full">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpen(false)
+                                  onOpenAvatarModal?.()
+                                }}
+                                className="relative group shrink-0 rounded-full focus:outline-none cursor-pointer"
+                                title="Click to customize avatar"
+                              >
+                                <Avatar
+                                  src={profileImage}
+                                  name={profileName}
+                                  sizeClassName="w-8 h-8"
+                                  className="ring-2 ring-transparent group-hover:ring-indigo-500 transition shadow-sm"
                                 />
-                              </div>
+                                <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
+                                  <Camera className="w-3 h-3 text-white" />
+                                </div>
+                              </button>
                               <span className='sr-only'>
                                 Your profile
                               </span>
-                              <div className="flex flex-col">
-                                <span aria-hidden>{profileName}</span>
-                                <span className='text-xs text-zinc-400' aria-hidden>{profileEmail}</span>
+                              <div 
+                                onClick={() => {
+                                  setOpen(false)
+                                  onOpenAvatarModal?.()
+                                }}
+                                className="flex flex-col truncate cursor-pointer hover:opacity-80 transition ml-2"
+                                title="Click to customize avatar"
+                              >
+                                <span aria-hidden className="truncate text-sm font-medium text-gray-800 dark:text-gray-200">{profileName}</span>
+                                <span className='text-xs text-zinc-400 truncate' aria-hidden>{profileEmail}</span>
                               </div>
                               <div className="flex items-center gap-1 ml-auto">
                                 <ThemeToggle />

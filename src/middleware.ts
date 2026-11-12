@@ -1,55 +1,47 @@
-//middlewares 
-
 import { getToken } from "next-auth/jwt"
 import { withAuth } from "next-auth/middleware"
 import { NextResponse } from "next/server"
 
 export default withAuth(
     async function middleware(req) {
-        const pathname= req.nextUrl.pathname
+        const pathname = req.nextUrl.pathname
 
+        const isAuth = await getToken({ req })
+        const isAuthPage = pathname.startsWith('/login') || pathname.startsWith('/signup')
 
-        //managing routes protections
-            const isAuth= await getToken({req})
-            const isLoginPage= pathname.startsWith('/login')
+        const sensitiveRoutes = ['/dashboard']
+        const isAccessingSensitiveRoute = sensitiveRoutes.some((route) => pathname.startsWith(route))
 
-        //sensitive routes 
-            const sensitiveRoutes= ['/dashboard']
-
-        //checking if the sensitive route is accessed
-        const isAccessingSensitiveRoute= sensitiveRoutes.some((route)=> pathname.startsWith(route))
-
-        //checking if the user is in login page
-        if(isLoginPage){
-            if(isAuth){    //if he/she is authenticated
-                return NextResponse.redirect(new URL('/dashboard', req.url))  //redirecting to dashboard
+        // If authenticated user visits login or signup, redirect them straight to dashboard
+        if (isAuthPage) {
+            if (isAuth) {
+                return NextResponse.redirect(new URL('/dashboard', req.url))
             }
-
-            return NextResponse.next()   //else the it will be as it is in login page
+            return NextResponse.next()
         }
 
-
-        //checking if they are not authenticated and accessing the sensitive routes
-        if(!isAuth && isAccessingSensitiveRoute){
-            return NextResponse.redirect(new URL('/login', req.url)) //redirecting them to login page
+        // If unauthenticated user tries to access sensitive dashboard routes, redirect to login
+        if (!isAuth && isAccessingSensitiveRoute) {
+            return NextResponse.redirect(new URL('/login', req.url))
         }
 
-
-        //checking if they are in home page
-        if(pathname === '/'){
-            if(isAuth){
+        // Root route handler
+        if (pathname === '/') {
+            if (isAuth) {
                 return NextResponse.redirect(new URL('/dashboard', req.url))
             }
             return NextResponse.redirect(new URL('/login', req.url))
         }
-    },{
-        callbacks:{
-            async authorized(){
+    },
+    {
+        callbacks: {
+            async authorized() {
                 return true
             },
         },
-    })
+    }
+)
 
-export const config= {
-    matcher: ['/', '/login', '/dashboard/:path*']
+export const config = {
+    matcher: ['/', '/login', '/signup', '/dashboard/:path*']
 }

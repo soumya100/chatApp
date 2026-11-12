@@ -31,17 +31,49 @@ export async function POST(req: Request) {
             })
         }
 
-        const rawEmail = typeof body === 'object' && body !== null && typeof body.email === 'object' && body.email !== null
+        const rawIdentifier = typeof body === 'object' && body !== null && typeof body.email === 'object' && body.email !== null
             ? body.email.email
             : body?.email ?? body
 
-        const { email: emailToAdd } = addFriendValidator.parse({ email: rawEmail })
+        const { email: identifier } = addFriendValidator.parse({ email: rawIdentifier })
+        const normalized = identifier.trim().toLowerCase()
 
-        const idToAdd= await fetchRedis('get', `user:email:${emailToAdd}`) as string
+        // 1. Check if identifier matches an email index
+        let idToAdd = (await fetchRedis('get', `user:email:${normalized}`)) as string | null
 
-        //if this person doesnt exist
+        // 2. Check if identifier matches a username index
         if (!idToAdd) {
-            return new Response('This person does not exist.', {status: 400})
+            idToAdd = (await fetchRedis('get', `user:name:${normalized}`)) as string | null
+        }
+
+        // 3. Fallback: Search all registered users by full name, stripped username, or email
+        if (!idToAdd) {
+            const allUserIds = (await db.smembers('users')) as string[]
+            if (allUserIds && allUserIds.length > 0) {
+                const pipeline = db.pipeline()
+                allUserIds.forEach((uid) => pipeline.get(`user:${uid}`))
+                const results = await pipeline.exec()
+                for (const raw of results) {
+                    if (!raw) continue
+                    try {
+                        const u = (typeof raw === 'string' ? JSON.parse(raw) : raw) as User
+                        if (
+                            u &&
+                            (u.name?.toLowerCase().trim() === normalized ||
+                             u.name?.toLowerCase().replace(/\s+/g, '') === normalized ||
+                             u.email?.toLowerCase().trim() === normalized)
+                        ) {
+                            idToAdd = u.id
+                            break
+                        }
+                    } catch {}
+                }
+            }
+        }
+
+        // If this person doesn't exist
+        if (!idToAdd) {
+            return new Response('User not found. Please check the username or email address.', { status: 400 })
         }
 
         //checking if the user logged in is trying to add the same person as friend

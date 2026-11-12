@@ -1,9 +1,9 @@
 'use client'
-import { NoContent } from '@/common'
+import { Avatar, NoContent } from '@/common'
 import { pusherClient } from '@/lib/pusher'
 import { toPusherKey } from '@/lib/utils'
 import axios, { AxiosError } from 'axios'
-import { UserCheck, UserPlus, UserRoundX } from 'lucide-react'
+import { Loader2, UserCheck, UserPlus, UserRoundX } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { FC, useEffect, useState } from 'react'
@@ -17,6 +17,7 @@ interface FriendRequestsProps {
 const FriendRequests: FC<FriendRequestsProps> = ({ incomingFriendRequests, sessionId }) => {
     const router= useRouter()
     const [friendRequests, setFriendRequests] = useState<IncomingFriendRequest[]>(incomingFriendRequests)
+    const [loadingAction, setLoadingAction] = useState<{ senderId: string; type: 'accept' | 'deny' } | null>(null)
 
     useEffect(() => {
         setFriendRequests(incomingFriendRequests)
@@ -50,7 +51,8 @@ const FriendRequests: FC<FriendRequestsProps> = ({ incomingFriendRequests, sessi
        
 
     //accept or deny friend functionality
-    const acceptOrDenyFriendRequest= async(senderId: string, type: 'accept' | 'deny')=>{
+    const acceptOrDenyFriendRequest = async(senderId: string, type: 'accept' | 'deny') => {
+        setLoadingAction({ senderId, type })
         try {
             switch(type){
                 case 'accept':
@@ -72,6 +74,8 @@ const FriendRequests: FC<FriendRequestsProps> = ({ incomingFriendRequests, sessi
                 return
             }
             toast.error('Something went wrong')
+        } finally {
+            setLoadingAction(null)
         }
     }
 
@@ -91,10 +95,12 @@ const FriendRequests: FC<FriendRequestsProps> = ({ incomingFriendRequests, sessi
                     <NoContent className='h-[50vh] w-full' noContentText='No pending friend requests'/> :
                     friendRequests && friendRequests.map((request) => (
                         <div key={request.senderId} className='flex gap-6 items-center bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 rounded-xl px-4 py-3.5 border border-gray-200 dark:border-zinc-800 shadow-xs transition-colors'>
-                            <div className="relative h-14 w-14 bg-gray-50 dark:bg-zinc-800 rounded-full shrink-0">
-                                <Image src={request.senderImage || ''} alt={`${request.senderName}'s avatar`} fill
-                                    referrerPolicy='no-referrer'
-                                    className='rounded-full'
+                            <div className="relative h-14 w-14 rounded-full shrink-0">
+                                <Avatar
+                                    src={request.senderImage}
+                                    name={request.senderName}
+                                    sizeClassName="w-14 h-14"
+                                    textClassName="text-xl font-bold text-white"
                                 />
                             </div>
                             <div className='truncate'>
@@ -107,20 +113,32 @@ const FriendRequests: FC<FriendRequestsProps> = ({ incomingFriendRequests, sessi
                             </div>
                             <div className="flex gap-2.5 ml-auto shrink-0">
                                 <button 
-                                    aria-label='accept friend' 
-                                    className='border border-green-200 dark:border-green-800/80 bg-green-50 dark:bg-green-950/40 hover:bg-green-100 rounded-lg p-2 transition-colors' 
+                                    aria-label={`Accept friend request from ${request.senderName || request.senderEmail}`}
+                                    aria-busy={loadingAction?.senderId === request.senderId && loadingAction.type === 'accept'}
+                                    disabled={loadingAction?.senderId === request.senderId}
+                                    className='border border-green-200 dark:border-green-800/80 bg-green-50 dark:bg-green-950/40 hover:bg-green-100 dark:hover:bg-green-900/60 rounded-lg p-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[36px] min-h-[36px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500' 
                                     onClick={()=>acceptOrDenyFriendRequest(request.senderId, 'accept')}
                                     title='Accept'
                                 >
-                                    <UserCheck className='text-green-600 dark:text-green-400' size={18}/>
+                                    {loadingAction?.senderId === request.senderId && loadingAction.type === 'accept' ? (
+                                        <Loader2 className='text-green-600 dark:text-green-400 animate-spin' size={18} aria-hidden='true'/>
+                                    ) : (
+                                        <UserCheck className='text-green-600 dark:text-green-400' size={18} aria-hidden='true'/>
+                                    )}
                                 </button>
                                 <button 
-                                    aria-label='reject friend' 
-                                    className='border border-red-200 dark:border-red-800/80 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 rounded-lg p-2 transition-colors' 
+                                    aria-label={`Decline friend request from ${request.senderName || request.senderEmail}`}
+                                    aria-busy={loadingAction?.senderId === request.senderId && loadingAction.type === 'deny'}
+                                    disabled={loadingAction?.senderId === request.senderId}
+                                    className='border border-red-200 dark:border-red-800/80 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 rounded-lg p-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[36px] min-h-[36px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500' 
                                     onClick={()=>acceptOrDenyFriendRequest(request.senderId, 'deny')}
                                     title='Decline'
                                 >
-                                    <UserRoundX className='text-red-500 dark:text-red-400' size={18}/>
+                                    {loadingAction?.senderId === request.senderId && loadingAction.type === 'deny' ? (
+                                        <Loader2 className='text-red-500 dark:text-red-400 animate-spin' size={18} aria-hidden='true'/>
+                                    ) : (
+                                        <UserRoundX className='text-red-500 dark:text-red-400' size={18} aria-hidden='true'/>
+                                    )}
                                 </button>
                             </div>
                         </div>

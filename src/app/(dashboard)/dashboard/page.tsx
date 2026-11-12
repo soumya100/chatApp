@@ -5,6 +5,12 @@ import { db } from '@/lib/db'
 import { chatHrefConstructor } from '@/lib/utils'
 import { getServerSession } from 'next-auth'
 import { notFound } from 'next/navigation'
+import { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Dashboard',
+  description: 'View your conversations, active friends, and recent messages on Chat+.',
+}
 
 interface FriendWithLastMsg extends User {
   lastMessage: Message | null

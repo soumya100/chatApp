@@ -2,7 +2,9 @@ interface User {
     name: string,
     email: string,
     image: string,
-    id: string
+    id: string,
+    password?: string,
+    createdAt?: number
 }
 
 interface Message {
@@ -15,9 +17,32 @@ interface Message {
     isDeleted?: boolean,
     reactions?: Record<string, string[]>,
     mediaUrl?: string,
-    mediaType?: 'image' | 'file',
+    mediaType?: 'image' | 'file' | 'video' | 'audio' | 'video-note',
     fileName?: string,
-    fileSize?: number
+    fileSize?: number,
+    duration?: number,
+    status?: 'sending' | 'sent' | 'error',
+    isSeen?: boolean,
+    seenAt?: number,
+    senderName?: string,
+    senderImg?: string,
+    replyTo?: {
+        id: string,
+        senderName: string,
+        text?: string,
+        mediaType?: string
+    }
+}
+
+interface Group {
+    id: string,
+    name: string,
+    creatorId: string,
+    memberIds: string[],
+    description?: string,
+    image?: string,
+    createdAt: number,
+    lastMessage?: string
 }
 
 interface Chat {

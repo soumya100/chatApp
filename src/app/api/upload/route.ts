@@ -18,10 +18,10 @@ export async function POST(req: Request) {
             return new Response('No file provided', { status: 400 })
         }
 
-        // Limit file size to 10MB
-        const MAX_SIZE = 10 * 1024 * 1024
+        // Limit file size to 30MB (supports HD images, voice messages, short video notes, and videos)
+        const MAX_SIZE = 30 * 1024 * 1024
         if (file.size > MAX_SIZE) {
-            return new Response('File exceeds 10MB limit', { status: 400 })
+            return new Response('File exceeds 30MB limit', { status: 400 })
         }
 
         const buffer = Buffer.from(await file.arrayBuffer())
@@ -39,7 +39,19 @@ export async function POST(req: Request) {
 
         await fs.promises.writeFile(filePath, buffer)
 
-        const mediaType = file.type.startsWith('image/') ? 'image' : 'file'
+        let mediaType: 'image' | 'video' | 'audio' | 'video-note' | 'file' = 'file'
+        const customType = formData.get('mediaType') as string | null
+
+        if (customType === 'video-note') {
+            mediaType = 'video-note'
+        } else if (file.type.startsWith('image/')) {
+            mediaType = 'image'
+        } else if (file.type.startsWith('video/')) {
+            mediaType = 'video'
+        } else if (file.type.startsWith('audio/')) {
+            mediaType = 'audio'
+        }
+
         const url = `/uploads/${uniqueFileName}`
 
         return Response.json({
@@ -54,4 +66,3 @@ export async function POST(req: Request) {
         return new Response('Upload failed', { status: 500 })
     }
 }
-

@@ -3,6 +3,12 @@ import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { getServerSession } from 'next-auth'
 import { notFound } from 'next/navigation'
+import { Metadata } from 'next'
+
+export const metadata: Metadata = {
+    title: 'Friend Requests',
+    description: 'Manage incoming and pending friend requests on Chat+.',
+}
 
 const page = async ({}) => {
     const session = await getServerSession(authOptions)

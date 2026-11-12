@@ -5,6 +5,7 @@ import DialogUI from './Dialog'
 import NoContent from './NoContentPage'
 import UnSeenChatToast from './UnseenChatToast'
 import ThemeToggle from './ThemeToggle'
+import Avatar from './Avatar'
 
 export {
     Button,
@@ -13,5 +14,6 @@ export {
     DialogUI, 
     NoContent,
     UnSeenChatToast,
-    ThemeToggle
+    ThemeToggle,
+    Avatar
 }
