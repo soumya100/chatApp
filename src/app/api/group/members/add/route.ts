@@ -81,8 +81,8 @@ export async function POST(req: Request) {
 
         // Persist to Redis
         const pipeline = db.pipeline()
-        pipeline.sadd(`group:${groupId}:members`, ...newMembersToAdd)
         for (const uid of newMembersToAdd) {
+            pipeline.sadd(`group:${groupId}:members`, uid)
             pipeline.sadd(`user:${uid}:groups`, groupId)
         }
         pipeline.set(`group:${groupId}`, JSON.stringify(updatedGroup))

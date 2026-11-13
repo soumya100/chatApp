@@ -47,9 +47,9 @@ export async function POST(req: Request) {
         // Persist group in Redis
         const pipeline = db.pipeline()
         pipeline.set(`group:${groupId}`, JSON.stringify(newGroup))
-        pipeline.sadd(`group:${groupId}:members`, ...allMemberIds)
 
         for (const memberId of allMemberIds) {
+            pipeline.sadd(`group:${groupId}:members`, memberId)
             pipeline.sadd(`user:${memberId}:groups`, groupId)
         }
 
