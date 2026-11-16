@@ -12,29 +12,58 @@ export interface UploadedMediaResponse {
  * The API route only authorizes the upload; file bytes never pass through
  * the Next.js serverless function.
  */
+const MAX_UPLOAD_SIZE = 30 * 1024 * 1024
+
+const ALLOWED_DOCUMENT_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+  "application/zip",
+  "application/x-zip-compressed",
+])
+
+const DOCUMENT_MIME_BY_EXTENSION: Record<string, string> = {
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  txt: "text/plain",
+  zip: "application/zip",
+}
+
 export async function uploadMedia(file: File): Promise<UploadedMediaResponse> {
-  const maxUploadSize = 30 * 1024 * 1024
-  if (file.size > maxUploadSize) {
-    throw new Error('Media files cannot exceed 30MB. Please record a shorter video note.')
-  }
-  if (!file.type || !/^(image|video|audio)\//i.test(file.type.split(';')[0])) {
-    throw new Error('This media format is not supported.')
+  if (file.size > MAX_UPLOAD_SIZE) {
+    throw new Error("Attachments cannot exceed 30MB.")
   }
 
-  const blob = await upload(file.name, file, {
+  const extension = file.name.split(".").pop()?.toLowerCase() || ""
+  const mimeType = (file.type || DOCUMENT_MIME_BY_EXTENSION[extension] || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase()
+
+  const isImage = mimeType.startsWith("image/")
+  const isVideo = mimeType.startsWith("video/")
+  const isAudio = mimeType.startsWith("audio/")
+  const isDocument = ALLOWED_DOCUMENT_TYPES.has(mimeType)
+
+  if (!isImage && !isVideo && !isAudio && !isDocument) {
+    throw new Error("This file format is not supported. Allowed: images, videos, audio, PDF, DOC, DOCX, TXT and ZIP.")
+  }
+
+  const uploadFile = file.type ? file : new File([file], file.name, { type: mimeType })
+  const blob = await upload(file.name, uploadFile, {
     access: "public",
     handleUploadUrl: "/api/upload",
   })
 
-  let mediaType: UploadedMediaResponse["mediaType"] = "file"
-
-  if (file.type.startsWith("image/")) {
-    mediaType = "image"
-  } else if (file.type.startsWith("video/")) {
-    mediaType = "video"
-  } else if (file.type.startsWith("audio/")) {
-    mediaType = "audio"
-  }
+  const mediaType: UploadedMediaResponse["mediaType"] = isImage
+    ? "image"
+    : isVideo
+      ? "video"
+      : isAudio
+        ? "audio"
+        : "file"
 
   return {
     url: blob.url,
