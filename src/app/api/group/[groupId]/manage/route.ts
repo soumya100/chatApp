@@ -52,10 +52,21 @@ export async function POST(req: Request, { params }: { params: { groupId: string
         let updatedGroup: Group = { ...group }
 
         if (action === "update") {
-            if (!isAdmin && group.settings?.onlyAdminsCanEditInfo) {
+            const data = parsed.data
+            const isChangingGroupInfo =
+                data.name !== undefined ||
+                data.description !== undefined ||
+                data.image !== undefined
+
+            // Group settings control permissions for every member, so only admins
+            // may change them even when ordinary group-info edits are unrestricted.
+            if (data.settings !== undefined && !isAdmin) {
+                return Response.json({ message: "Only admins can change group settings" }, { status: 403 })
+            }
+            if (isChangingGroupInfo && !isAdmin && group.settings?.onlyAdminsCanEditInfo) {
                 return Response.json({ message: "Only admins can edit group information" }, { status: 403 })
             }
-            const data = parsed.data
+
             updatedGroup = {
                 ...group,
                 ...(data.name !== undefined ? { name: data.name } : {}),
