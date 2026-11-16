@@ -230,7 +230,7 @@ const ChatInput: FC<ChatInputProps> = ({
         })
       }
     } catch (error: any) {
-      toast.error(error?.response?.data || 'Something went wrong. Please try later')
+      toast.error(error?.response?.data || error?.message || 'Something went wrong. Please try later')
     } finally {
       setIsLoading(false)
     }
