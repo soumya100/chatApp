@@ -128,7 +128,8 @@ const GroupSettingsModal: FC<Props> = ({ isOpen, onClose, group, sessionId, onGr
                   </button>
                 </>
               ) : <p className="text-sm text-gray-500 py-6">Only group admins can edit group settings.</p>}
-              <GroupPrivacySettings groupId={group.id} />\n              <button onClick={leave} disabled={isLeaving} className="mt-3 w-full rounded-xl border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 py-2.5 text-sm font-semibold flex justify-center items-center gap-2">
+              <GroupPrivacySettings groupId={group.id} />
+              <button onClick={leave} disabled={isLeaving} className="mt-3 w-full rounded-xl border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 py-2.5 text-sm font-semibold flex justify-center items-center gap-2">
                 {isLeaving ? <Loader2 size={15} className="animate-spin" /> : <LogOut size={15} />} Leave group
               </button>
             </Dialog.Panel>
