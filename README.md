@@ -164,8 +164,9 @@ src/
 1. Push your repository to GitHub.
 2. Import the project into [Vercel](https://vercel.com).
 3. Add the environment variables specified in `.env.example`.
-4. Set `NEXTAUTH_URL` to your production domain (`https://your-app.vercel.app`).
-5. Add `https://your-app.vercel.app/api/auth/callback/google` to your Google Cloud Console Authorized Redirect URIs.
+4. Create a Vercel Blob store and add its `BLOB_READ_WRITE_TOKEN` to the project environment variables (Production, Preview, and Development as needed).
+5. Set `NEXTAUTH_URL` to your production domain (`https://your-app.vercel.app`).
+7. Add `https://your-app.vercel.app/api/auth/callback/google` to your Google Cloud Console Authorized Redirect URIs.
 
 ---
 
