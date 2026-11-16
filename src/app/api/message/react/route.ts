@@ -57,8 +57,8 @@ export async function POST(req: Request) {
             return new Response('Message not found', { status: 404 })
         }
 
-        if (targetMessage.isDeleted) {
-            return new Response('Cannot react to a deleted message', { status: 400 })
+        if (targetMessage.senderId === 'system' || targetMessage.isDeleted) {
+            return new Response('Cannot react to a system-generated or deleted message', { status: 400 })
         }
 
         const currentReactions = { ...(targetMessage.reactions || {}) }
