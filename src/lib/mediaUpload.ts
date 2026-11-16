@@ -17,7 +17,7 @@ export async function uploadMedia(file: File): Promise<UploadedMediaResponse> {
   if (file.size > maxUploadSize) {
     throw new Error('Media files cannot exceed 30MB. Please record a shorter video note.')
   }
-  if (!file.type || !/^(image|video|audio)\\//i.test(file.type.split(';')[0])) {
+  if (!file.type || !/^(image|video|audio)\//i.test(file.type.split(';')[0])) {
     throw new Error('This media format is not supported.')
   }
 
