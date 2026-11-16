@@ -47,7 +47,7 @@ async function getChatMessages(chatId: string): Promise<Message[]> {
       try {
         const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
         const validated = messageValidator.parse(parsed)
-        messages.push(validated)
+        if (!validated.expiresAt || validated.expiresAt > Date.now()) messages.push(validated)
       } catch {
         // Skip malformed message records safely
       }
