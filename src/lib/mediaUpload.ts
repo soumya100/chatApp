@@ -1,26 +1,37 @@
-import axios from 'axios'
+import { upload } from "@vercel/blob/client"
 
 export interface UploadedMediaResponse {
   url: string
-  mediaType: 'image' | 'video' | 'video-note' | 'audio' | 'file'
+  mediaType: "image" | "video" | "video-note" | "audio" | "file"
   fileName: string
   fileSize: number
 }
 
 /**
- * Upload a media file or recorded blob to the server storage endpoint.
- * Encapsulates FormData creation and response parsing (SOLID: Single Responsibility & Dependency Inversion).
+ * Upload media directly from the browser to persistent Vercel Blob storage.
+ * The API route only authorizes the upload; file bytes never pass through
+ * the Next.js serverless function.
  */
 export async function uploadMedia(file: File): Promise<UploadedMediaResponse> {
-  const formData = new FormData()
-  formData.append('file', file)
-
-  const response = await axios.post<UploadedMediaResponse>('/api/upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+  const blob = await upload(file.name, file, {
+    access: "public",
+    handleUploadUrl: "/api/upload",
   })
 
-  return response.data
-}
+  let mediaType: UploadedMediaResponse["mediaType"] = "file"
 
+  if (file.type.startsWith("image/")) {
+    mediaType = "image"
+  } else if (file.type.startsWith("video/")) {
+    mediaType = "video"
+  } else if (file.type.startsWith("audio/")) {
+    mediaType = "audio"
+  }
+
+  return {
+    url: blob.url,
+    mediaType,
+    fileName: file.name,
+    fileSize: file.size,
+  }
+}
