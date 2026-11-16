@@ -28,17 +28,20 @@ const sendMessagePayloadValidator = z.object({
 })
 
 export async function POST(req: Request) {
+    let operation = 'parse request'
     try {
         const body = await req.json()
         const payload = sendMessagePayloadValidator.parse(body)
         const { text, chatId } = payload
 
+        operation = 'authenticate sender'
         const session = await getServerSession(authOptions)
         if (!session?.user?.id) {
             return new Response('Unauthorized', { status: 401 })
         }
 
         // Rate limit: max 15 messages per 10 seconds
+        operation = 'rate limit'
         const { success: isAllowed } = await rateLimit(session.user.id, 'send_message', {
             limit: 15,
             windowSeconds: 10
@@ -50,6 +53,7 @@ export async function POST(req: Request) {
             })
         }
 
+        operation = 'load sender profile'
         const senderRaw = await fetchRedis('get', `user:${session.user.id}`) as string | User | null
         const parsedSender = (typeof senderRaw === 'string' ? JSON.parse(senderRaw) : senderRaw) as User
         const timeStamp = Date.now()
@@ -89,30 +93,37 @@ export async function POST(req: Request) {
             const message = messageValidator.parse(messageData)
 
             // Persist message to group chat history
+            operation = 'persist group message'
             await db.zadd(`chat:${chatId}:messages`, {
                 score: timeStamp,
                 member: JSON.stringify(message)
             })
 
-            // Broadcast to private chat room channel
-            await pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), 'incoming-message', message)
+            // Broadcast after persistence. Pusher payloads must stay small: profile images
+            // may be stored as data URLs and exceed Pusher's event-size limit.
+            operation = 'broadcast group message'
+            const pusherMessage = { ...message, senderImg: message.senderImg?.startsWith('data:') || (message.senderImg?.length || 0) > 2048 ? undefined : message.senderImg }
+            const broadcastResults = await Promise.allSettled([
+                pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), 'incoming-message', pusherMessage)
+            ])
+            broadcastResults.forEach(result => { if (result.status === 'rejected') console.error('Pusher group message broadcast failed:', result.reason) })
 
             // Increment unread and notify each group member (except sender)
             const allMembers = (await db.smembers(`group:${groupId}:members`)) as string[]
             const recipientMembers = allMembers.filter((m) => m !== session.user.id)
 
-            await Promise.all(
-                recipientMembers.map((memberId) =>
-                    Promise.all([
-                        db.hincrby(`user:${memberId}:unread`, chatId, 1),
-                        pusherServer.trigger(toPusherKey(`private-user:${memberId}:chats`), 'new_message', {
-                            ...message,
-                            senderName: `${parsedSender?.name || 'User'} (${group?.name || 'Group'})`,
-                            senderImg: parsedSender?.image
-                        })
-                    ])
-                )
-            )
+            operation = 'update group unread counts and notifications'
+            await Promise.all(recipientMembers.map(async (memberId) => {
+                await db.hincrby(`user:${memberId}:unread`, chatId, 1)
+                try {
+                    await pusherServer.trigger(toPusherKey(`private-user:${memberId}:chats`), 'new_message', {
+                        ...pusherMessage,
+                        senderName: `${parsedSender?.name || 'User'} (${group?.name || 'Group'})`
+                    })
+                } catch (error) {
+                    console.error('Pusher group notification failed:', error)
+                }
+            }))
 
             return Response.json(message)
         }
@@ -155,7 +166,8 @@ export async function POST(req: Request) {
 
         const message = messageValidator.parse(messageData)
 
-        // Persist message to database and increment recipient unread count
+        // Persist message to Redis before attempting realtime delivery.
+        operation = 'persist direct message and unread count'
         await Promise.all([
             db.zadd(`chat:${chatId}:messages`, {
                 score: timeStamp,
@@ -164,18 +176,25 @@ export async function POST(req: Request) {
             db.hincrby(`user:${friendId}:unread`, chatId, 1)
         ])
 
-        // Broadcast to private channels
-        await Promise.all([
-            pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), 'incoming-message', message),
+        // Realtime delivery is best-effort: Pusher can reject oversized events (413).
+        // A Pusher failure must not make an already-persisted message look unsent.
+        operation = 'broadcast direct message'
+        const pusherMessage = {
+            ...message,
+            senderImg: parsedSender?.image?.startsWith('data:') || (parsedSender?.image?.length || 0) > 2048 ? undefined : parsedSender?.image
+        }
+        const broadcastResults = await Promise.allSettled([
+            pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), 'incoming-message', pusherMessage),
             pusherServer.trigger(toPusherKey(`private-user:${friendId}:chats`), 'new_message', {
-                ...message,
-                senderImg: parsedSender?.image,
+                ...pusherMessage,
                 senderName: parsedSender?.name
             })
         ])
+        broadcastResults.forEach(result => { if (result.status === 'rejected') console.error('Pusher direct message broadcast failed:', result.reason) })
 
         return Response.json(message)
     } catch (error) {
+        console.error(`[message/send] Failed during ${operation}:`, error)
         if (error instanceof z.ZodError) {
             return new Response('Invalid request payload', { status: 422 })
         }

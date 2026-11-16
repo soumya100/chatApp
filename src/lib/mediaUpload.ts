@@ -17,8 +17,18 @@ export async function uploadMedia(file: File): Promise<UploadedMediaResponse> {
   if (file.size > maxUploadSize) {
     throw new Error('Media files cannot exceed 30MB. Please record a shorter video note.')
   }
-  if (!file.type || !/^(image|video|audio)\//i.test(file.type.split(';')[0])) {
-    throw new Error('This media format is not supported.')
+  const mimeType = (file.type || '').split(';')[0].trim().toLowerCase()
+  const allowedMimeTypes = new Set([
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+    'application/zip',
+    'application/x-zip-compressed',
+  ])
+  const isSupportedMedia = /^(image|video|audio)\//.test(mimeType)
+  if (!mimeType || (!isSupportedMedia && !allowedMimeTypes.has(mimeType))) {
+    throw new Error('This file format is not supported. Supported files: images, videos, audio, PDF, DOC/DOCX, TXT and ZIP.')
   }
 
   const blob = await upload(file.name, file, {
@@ -28,11 +38,11 @@ export async function uploadMedia(file: File): Promise<UploadedMediaResponse> {
 
   let mediaType: UploadedMediaResponse["mediaType"] = "file"
 
-  if (file.type.startsWith("image/")) {
+  if (mimeType.startsWith("image/")) {
     mediaType = "image"
-  } else if (file.type.startsWith("video/")) {
+  } else if (mimeType.startsWith("video/")) {
     mediaType = "video"
-  } else if (file.type.startsWith("audio/")) {
+  } else if (mimeType.startsWith("audio/")) {
     mediaType = "audio"
   }
 
