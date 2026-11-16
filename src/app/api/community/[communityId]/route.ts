@@ -8,6 +8,8 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("update"), name: z.string().trim().min(2).max(60).optional(), description: z.string().max(500).optional() }),
   z.object({ action: z.literal("addGroup"), groupId: z.string().min(1) }),
   z.object({ action: z.literal("removeGroup"), groupId: z.string().min(1) }),
+  z.object({ action: z.literal("addMember"), memberId: z.string().min(1) }),
+  z.object({ action: z.literal("removeMember"), memberId: z.string().min(1) }),
   z.object({ action: z.literal("leave") })
 ])
 
@@ -36,6 +38,17 @@ export async function POST(req: Request, { params }: { params: { communityId: st
     if (!(group.adminIds || [group.creatorId]).includes(userId)) return Response.json({ message: "You must administer the group" }, { status: 403 })
     community.groupIds = Array.from(new Set([...(community.groupIds || []), group.id]))
     await db.set(`group:${group.id}`, JSON.stringify({ ...group, communityId: params.communityId, updatedAt: Date.now() }))
+  } else if (action === "addMember") {
+    const targetId = parsed.data.memberId
+    const rawUser = await db.get(`user:${targetId}`)
+    if (!rawUser) return Response.json({ message: "User not found" }, { status: 404 })
+    community.memberIds = Array.from(new Set([...(community.memberIds || []), targetId]))
+    await db.sadd(`user:${targetId}:communities`, params.communityId)
+  } else if (action === "removeMember") {
+    const targetId = parsed.data.memberId
+    if (targetId === community.ownerId) return Response.json({ message: "Transfer ownership before removing the owner" }, { status: 400 })
+    community.memberIds = (community.memberIds || []).filter((id: string) => id !== targetId)
+    await db.srem(`user:${targetId}:communities`, params.communityId)
   } else if (action === "removeGroup") {
     community.groupIds = (community.groupIds || []).filter((id: string) => id !== parsed.data.groupId)
     const rawGroup = await db.get(`group:${parsed.data.groupId}`)
