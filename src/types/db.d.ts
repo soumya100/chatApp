@@ -35,6 +35,7 @@ interface Message {
     isPinned?: boolean,
     pinnedAt?: number,
     pinnedBy?: string,
+    expiresAt?: number,
     mentions?: string[]
 }
 
