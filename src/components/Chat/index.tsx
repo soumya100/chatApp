@@ -5,11 +5,13 @@ import Messages from './Messages'
 import ChatInput from './ChatInput'
 import { pusherClient } from '@/lib/pusher'
 import { toPusherKey } from '@/lib/utils'
-import { Search, UserPlus, X } from 'lucide-react'
+import { Search, UserPlus, X, Settings as SettingsIcon } from 'lucide-react'
 import axios from 'axios'
 import { nanoid } from 'nanoid'
 import toast from 'react-hot-toast'
 import AddGroupMembersModal from './AddGroupMembersModal'
+import GroupSettingsModal from './GroupSettingsModal'
+import { useRouter } from 'next/navigation'
 
 interface ChatProps {
   chatPartner: User
@@ -28,7 +30,10 @@ const Chat: FC<ChatProps> = ({
   sessionImg,
   initialGroup,
 }) => {
+  const router = useRouter()
   const isGroupChat = chatId.startsWith('group--')
+  const [group, setGroup] = useState<Group | undefined>(initialGroup)
+  const [isGroupSettingsOpen, setIsGroupSettingsOpen] = useState(false)
   const groupId = isGroupChat ? chatId.replace('group--', '') : ''
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [isPartnerOnline, setIsPartnerOnline] = useState<boolean>(false)
@@ -237,6 +242,12 @@ const Chat: FC<ChatProps> = ({
 
         {/* Header Action Buttons */}
         <div className='flex items-center gap-2'>
+          {/* Group settings and member controls */}
+          {isGroupChat && group && (
+            <button onClick={() => setIsGroupSettingsOpen(true)} className='p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-gray-300' title='Group settings' aria-label='Group settings'>
+              <SettingsIcon size={18} />
+            </button>
+          )}
           {/* Add Friends to Group Button */}
           {isGroupChat && (
             <button
@@ -305,6 +316,17 @@ const Chat: FC<ChatProps> = ({
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
       />
+
+      {isGroupChat && group && (
+        <GroupSettingsModal
+          isOpen={isGroupSettingsOpen}
+          onClose={() => setIsGroupSettingsOpen(false)}
+          group={group}
+          sessionId={sessionId}
+          onGroupUpdated={(updated) => { setGroup(updated); setExistingMemberIds(updated.memberIds); setMemberCount(updated.memberIds.length) }}
+          onLeave={() => router.push('/dashboard/chats')}
+        />
+      )}
 
       {/* Add Members to Group Modal */}
       {isGroupChat && (
