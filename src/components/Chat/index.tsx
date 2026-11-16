@@ -14,6 +14,7 @@ import GroupSettingsModal from './GroupSettingsModal'
 import GroupFeaturesPanel from './GroupFeaturesPanel'
 import GroupMembersManager from './GroupMembersManager'
 import GroupPrivacySettings from './GroupPrivacySettings'
+import PinnedMessagesBanner from './PinnedMessagesBanner'
 import { useRouter } from 'next/navigation'
 
 interface ChatProps {
