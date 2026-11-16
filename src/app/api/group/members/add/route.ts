@@ -6,135 +6,91 @@ import { getServerSession } from "next-auth"
 import { nanoid } from "nanoid"
 import { z } from "zod"
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic"
 
 const addMembersSchema = z.object({
-    groupId: z.string().min(1, "Group ID is required"),
-    memberIds: z.array(z.string()).min(1, "Select at least one friend to add")
+    groupId: z.string().min(1),
+    memberIds: z.array(z.string().min(1)).min(1).max(100)
 })
 
 export async function POST(req: Request) {
     try {
         const session = await getServerSession(authOptions)
-        if (!session?.user?.id) {
-            return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 })
+        if (!session?.user?.id) return Response.json({ message: "Unauthorized" }, { status: 401 })
+
+        const parsed = addMembersSchema.safeParse(await req.json())
+        if (!parsed.success) {
+            return Response.json({ message: parsed.error.errors[0]?.message || "Invalid payload" }, { status: 400 })
         }
 
-        const body = await req.json()
-        const parseResult = addMembersSchema.safeParse(body)
-        if (!parseResult.success) {
-            return new Response(
-                JSON.stringify({ message: parseResult.error.errors[0]?.message || "Invalid payload" }),
-                { status: 400 }
-            )
-        }
-
-        const { groupId, memberIds } = parseResult.data
-
-        // Verify current user is an existing member of the group
-        const isMember = (await db.sismember(`group:${groupId}:members`, session.user.id)) as 0 | 1
-        if (!isMember) {
-            return new Response(
-                JSON.stringify({ message: "Forbidden: You are not a member of this group" }),
-                { status: 403 }
-            )
-        }
-
-        // Fetch existing group record
+        const { groupId, memberIds } = parsed.data
         const groupRaw = await db.get(`group:${groupId}`)
-        if (!groupRaw) {
-            return new Response(JSON.stringify({ message: "Group not found" }), { status: 404 })
+        if (!groupRaw) return Response.json({ message: "Group not found" }, { status: 404 })
+
+        const group = (typeof groupRaw === "string" ? JSON.parse(groupRaw) : groupRaw) as Group
+        const isMember = group.memberIds?.includes(session.user.id)
+        if (!isMember) return Response.json({ message: "You are not a member of this group" }, { status: 403 })
+
+        const isAdmin = (group.adminIds || [group.creatorId]).includes(session.user.id)
+        if (group.settings?.onlyAdminsCanAddMembers && !isAdmin) {
+            return Response.json({ message: "Only group admins can add members" }, { status: 403 })
         }
 
-        const group = (typeof groupRaw === 'string' ? JSON.parse(groupRaw) : groupRaw) as Group
-        const existingMemberSet = new Set(group.memberIds || [])
-
-        // Filter for members not already in the group
-        const newMembersToAdd = memberIds.filter((id) => !existingMemberSet.has(id))
-        if (newMembersToAdd.length === 0) {
-            return new Response(
-                JSON.stringify({ message: "Selected friends are already in this group" }),
-                { status: 400 }
-            )
+        const uniqueIds = Array.from(new Set(memberIds)).filter(id => !group.memberIds.includes(id))
+        if (uniqueIds.length === 0) {
+            return Response.json({ message: "Selected users are already group members" }, { status: 409 })
         }
 
-        // Fetch added friends' profiles for announcement message
-        const addedUsersPipeline = db.pipeline()
-        for (const uid of newMembersToAdd) {
-            addedUsersPipeline.get(`user:${uid}`)
-        }
-        const rawAddedUsers = await addedUsersPipeline.exec()
-        const addedNames: string[] = []
-        for (const raw of rawAddedUsers) {
-            if (!raw) continue
+        const usersPipeline = db.pipeline()
+        uniqueIds.forEach(id => usersPipeline.get(`user:${id}`))
+        const rawUsers = await usersPipeline.exec()
+        const addedNames = rawUsers.flatMap(raw => {
             try {
-                const u = (typeof raw === 'string' ? JSON.parse(raw) : raw) as User
-                if (u?.name) addedNames.push(u.name)
-            } catch {}
-        }
+                const user = (typeof raw === "string" ? JSON.parse(raw) : raw) as User
+                return user?.name ? [user.name] : []
+            } catch { return [] }
+        })
 
-        const updatedMemberIds = Array.from(new Set([...group.memberIds, ...newMembersToAdd]))
         const updatedGroup: Group = {
             ...group,
-            memberIds: updatedMemberIds
+            memberIds: [...group.memberIds, ...uniqueIds],
+            updatedAt: Date.now()
         }
-
-        // Persist to Redis
-        const pipeline = db.pipeline()
-        for (const uid of newMembersToAdd) {
-            pipeline.sadd(`group:${groupId}:members`, uid)
-            pipeline.sadd(`user:${uid}:groups`, groupId)
-        }
-        pipeline.set(`group:${groupId}`, JSON.stringify(updatedGroup))
-
-        // System notification message
         const actorName = session.user.name || "A member"
-        const namesFormatted = addedNames.length > 0 ? addedNames.join(", ") : `${newMembersToAdd.length} friends`
         const systemMessage: Message = {
             id: nanoid(),
-            senderId: 'system',
+            senderId: "system",
             receiverId: `group--${groupId}`,
-            text: `${actorName} added ${namesFormatted} to the group`,
+            text: `${actorName} added ${addedNames.length ? addedNames.join(", ") : `${uniqueIds.length} member(s)`} to the group`,
             timestamp: Date.now(),
-            senderName: 'System'
+            senderName: "System"
         }
 
+        const pipeline = db.pipeline()
+        uniqueIds.forEach(id => {
+            pipeline.sadd(`group:${groupId}:members`, id)
+            pipeline.sadd(`user:${id}:groups`, groupId)
+        })
+        pipeline.set(`group:${groupId}`, JSON.stringify(updatedGroup))
         pipeline.zadd(`chat:group--${groupId}:messages`, {
             score: systemMessage.timestamp,
             member: JSON.stringify(systemMessage)
         })
-
         await pipeline.exec()
 
-        // Real-time Pusher updates:
-        // 1. Notify newly added members so the group appears in their sidebar
-        await Promise.all(
-            newMembersToAdd.map((uid) =>
-                pusherServer.trigger(toPusherKey(`private-user:${uid}:groups`), 'new_group', updatedGroup)
-            )
-        )
-
-        // 2. Broadcast updated member count and list to active chat room
-        const chatChannelKey = toPusherKey(`private-chat:group--${groupId}`)
         await Promise.all([
-            pusherServer.trigger(chatChannelKey, 'group_members_updated', {
-                group: updatedGroup,
-                addedMemberIds: newMembersToAdd
+            ...uniqueIds.map(id => pusherServer.trigger(
+                toPusherKey(`private-user:${id}:groups`), "new_group", updatedGroup
+            )),
+            pusherServer.trigger(toPusherKey(`private-chat:group--${groupId}`), "group_members_updated", {
+                group: updatedGroup, addedMemberIds: uniqueIds
             }),
-            pusherServer.trigger(chatChannelKey, 'incoming-message', systemMessage)
+            pusherServer.trigger(toPusherKey(`private-chat:group--${groupId}`), "incoming-message", systemMessage)
         ])
 
-        return Response.json({
-            success: true,
-            group: updatedGroup,
-            addedCount: newMembersToAdd.length
-        })
-    } catch (error: any) {
+        return Response.json({ success: true, group: updatedGroup, addedCount: uniqueIds.length })
+    } catch (error) {
         console.error("Failed to add members to group:", error)
-        return new Response(
-            JSON.stringify({ message: error?.message || "Failed to add members to group" }),
-            { status: 500 }
-        )
+        return Response.json({ message: "Failed to add members to group" }, { status: 500 })
     }
 }
-
