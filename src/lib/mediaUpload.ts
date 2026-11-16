@@ -26,7 +26,7 @@ export async function uploadMedia(file: File): Promise<UploadedMediaResponse> {
     'application/zip',
     'application/x-zip-compressed',
   ])
-  const isSupportedMedia = /^(image|video|audio)\\//.test(mimeType)
+  const isSupportedMedia = /^(image|video|audio)\//.test(mimeType)
   if (!mimeType || (!isSupportedMedia && !allowedMimeTypes.has(mimeType))) {
     throw new Error('This file format is not supported. Supported files: images, videos, audio, PDF, DOC/DOCX, TXT and ZIP.')
   }
