@@ -1,68 +1,54 @@
 import { authOptions } from "@/lib/auth"
+import { handleUpload } from "@vercel/blob/client"
 import { getServerSession } from "next-auth"
-import { nanoid } from "nanoid"
-import fs from "fs"
-import path from "path"
 
-export async function POST(req: Request) {
+export const runtime = "nodejs"
+
+const MAX_UPLOAD_SIZE = 30 * 1024 * 1024
+
+const ALLOWED_CONTENT_TYPES = [
+    "image/*",
+    "video/*",
+    "audio/*",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "application/zip",
+    "application/x-zip-compressed"
+]
+
+export async function POST(request: Request) {
     try {
-        const session = await getServerSession(authOptions)
-        if (!session?.user?.id) {
-            return new Response('Unauthorized', { status: 401 })
-        }
+        const body = await request.json()
 
-        const formData = await req.formData()
-        const file = formData.get('file') as File | null
+        const jsonResponse = await handleUpload({
+            body,
+            request,
+            onBeforeGenerateToken: async () => {
+                const session = await getServerSession(authOptions)
 
-        if (!file) {
-            return new Response('No file provided', { status: 400 })
-        }
+                if (!session?.user?.id) {
+                    throw new Error("Unauthorized")
+                }
 
-        // Limit file size to 30MB (supports HD images, voice messages, short video notes, and videos)
-        const MAX_SIZE = 30 * 1024 * 1024
-        if (file.size > MAX_SIZE) {
-            return new Response('File exceeds 30MB limit', { status: 400 })
-        }
-
-        const buffer = Buffer.from(await file.arrayBuffer())
-
-        // Ensure public/uploads directory exists
-        const uploadDir = path.join(process.cwd(), 'public', 'uploads')
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true })
-        }
-
-        // Sanitize filename
-        const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
-        const uniqueFileName = `${nanoid()}-${safeName}`
-        const filePath = path.join(uploadDir, uniqueFileName)
-
-        await fs.promises.writeFile(filePath, buffer)
-
-        let mediaType: 'image' | 'video' | 'audio' | 'video-note' | 'file' = 'file'
-        const customType = formData.get('mediaType') as string | null
-
-        if (customType === 'video-note') {
-            mediaType = 'video-note'
-        } else if (file.type.startsWith('image/')) {
-            mediaType = 'image'
-        } else if (file.type.startsWith('video/')) {
-            mediaType = 'video'
-        } else if (file.type.startsWith('audio/')) {
-            mediaType = 'audio'
-        }
-
-        const url = `/uploads/${uniqueFileName}`
-
-        return Response.json({
-            url,
-            mediaType,
-            fileName: file.name,
-            fileSize: file.size
+                return {
+                    allowedContentTypes: ALLOWED_CONTENT_TYPES,
+                    maximumSizeInBytes: MAX_UPLOAD_SIZE,
+                    addRandomSuffix: true,
+                    tokenPayload: JSON.stringify({ userId: session.user.id })
+                }
+            }
         })
 
+        return Response.json(jsonResponse)
     } catch (error) {
-        console.error('File upload error:', error)
-        return new Response('Upload failed', { status: 500 })
+        const message = error instanceof Error ? error.message : "Unable to initialize upload"
+        console.error("File upload initialization error:", message)
+
+        return Response.json(
+            { error: message },
+            { status: message === "Unauthorized" ? 401 : 400 }
+        )
     }
 }
