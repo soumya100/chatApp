@@ -23,7 +23,7 @@ export async function POST(req: Request, { params }: { params: { groupId: string
     const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
     if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
     const isAdmin = (group.adminIds || [group.creatorId]).includes(userId)
-    if (parsed.data.pinned && group.settings?.onlyAdminsCanPinMessages && !isAdmin) return Response.json({ message: "Only admins can pin messages" }, { status: 403 })
+    if (group.settings?.onlyAdminsCanPinMessages && !isAdmin) return Response.json({ message: "Only admins can pin messages" }, { status: 403 })
 
     const key = `chat:group--${groupId}:messages`
     const rows = (await db.zrange(key, 0, -1)) as unknown[]
