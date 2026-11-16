@@ -147,10 +147,11 @@ const ChatInput: FC<ChatInputProps> = ({
       return
     }
 
+    const mimeType = (file.type || '').split(';')[0].trim().toLowerCase()
     let fileType: 'image' | 'video' | 'audio' | 'file' = 'file'
-    if (file.type.startsWith('image/')) fileType = 'image'
-    else if (file.type.startsWith('video/')) fileType = 'video'
-    else if (file.type.startsWith('audio/')) fileType = 'audio'
+    if (mimeType.startsWith('image/')) fileType = 'image'
+    else if (mimeType.startsWith('video/')) fileType = 'video'
+    else if (mimeType.startsWith('audio/')) fileType = 'audio'
 
     const previewUrl = URL.createObjectURL(file)
 
@@ -398,7 +399,7 @@ const ChatInput: FC<ChatInputProps> = ({
               type='button'
               onClick={() => fileInputRef.current?.click()}
               className='p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors'
-              title='Attach image, video or document'
+              title='Attach image, video, audio or document'
               aria-label='Attach file, image or document'
             >
               <Paperclip size={18} aria-hidden='true' />
