@@ -99,8 +99,8 @@ GOOGLE_CLIENT_SECRET=your_google_client_secret
 UPSTASH_REDIS_REST_URL=https://your-database-id.upstash.io
 UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_rest_token
 
-# Vercel Blob (persistent media storage)
-# Create a Blob store in Vercel Storage and copy its read/write token
+# Vercel Blob (create a PUBLIC Blob store in Vercel Storage for chat attachments)
+# Copy its read/write token
 BLOB_READ_WRITE_TOKEN=your_vercel_blob_read_write_token
 
 # Pusher Channels
