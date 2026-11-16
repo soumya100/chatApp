@@ -20,9 +20,18 @@ export async function GET(req: Request) {
         const params = Object.fromEntries(url.searchParams.entries())
         const { chatId, query } = searchQueryValidator.parse(params)
 
-        const [userId1, userId2] = chatId.split('--')
-        if (session.user.id !== userId1 && session.user.id !== userId2) {
-            return new Response('Unauthorized', { status: 401 })
+        if (chatId.startsWith("group--")) {
+            const groupId = chatId.slice("group--".length)
+            const isMember = await db.sismember(`group:${groupId}:members`, session.user.id)
+            if (!isMember) return new Response("Forbidden", { status: 403 })
+        } else {
+            const ids = chatId.split("--")
+            if (ids.length !== 2 || !ids.includes(session.user.id)) {
+                return new Response("Forbidden", { status: 403 })
+            }
+            const friendId = ids[0] === session.user.id ? ids[1] : ids[0]
+            const isFriend = await db.sismember(`user:${session.user.id}:friends`, friendId)
+            if (!isFriend) return new Response("Forbidden", { status: 403 })
         }
 
         const rawMembers = (await db.zrange(`chat:${chatId}:messages`, 0, -1)) as unknown[]
