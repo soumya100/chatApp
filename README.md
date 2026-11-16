@@ -99,6 +99,10 @@ GOOGLE_CLIENT_SECRET=your_google_client_secret
 UPSTASH_REDIS_REST_URL=https://your-database-id.upstash.io
 UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_rest_token
 
+# Vercel Blob (create a PUBLIC Blob store in Vercel Storage for chat attachments)
+# Copy its read/write token
+BLOB_READ_WRITE_TOKEN=your_vercel_blob_read_write_token
+
 # Pusher Channels
 PUSHER_APP_ID=your_pusher_app_id
 NEXT_PUBLIC_PUSHER_APP_KEY=your_pusher_app_key
@@ -164,8 +168,9 @@ src/
 1. Push your repository to GitHub.
 2. Import the project into [Vercel](https://vercel.com).
 3. Add the environment variables specified in `.env.example`.
-4. Set `NEXTAUTH_URL` to your production domain (`https://your-app.vercel.app`).
-5. Add `https://your-app.vercel.app/api/auth/callback/google` to your Google Cloud Console Authorized Redirect URIs.
+4. Create a Vercel Blob store and add its `BLOB_READ_WRITE_TOKEN` to the project environment variables (Production, Preview, and Development as needed).
+5. Set `NEXTAUTH_URL` to your production domain (`https://your-app.vercel.app`).
+6. Add `https://your-app.vercel.app/api/auth/callback/google` to your Google Cloud Console Authorized Redirect URIs.
 
 ---
 

@@ -26,6 +26,10 @@ export const metadata: Metadata = {
   description:
     "Fast, secure, real-time messaging with instant voice notes, video notes, group chats, and desktop notifications.",
   applicationName: "Chat+",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+  },
   authors: [{ name: "Chat+ Team" }],
   creator: "Chat+",
   publisher: "Chat+",
