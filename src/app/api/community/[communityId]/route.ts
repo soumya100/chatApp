@@ -26,8 +26,28 @@ export async function POST(req: Request, { params }: { params: { communityId: st
   const action = parsed.data.action
   if (action !== "leave" && !(community.adminIds || [community.ownerId]).includes(userId)) return Response.json({ message: "Only community admins can manage it" }, { status: 403 })
   if (action === "leave") {
-    community.memberIds = community.memberIds.filter((id: string) => id !== userId)
+    const remaining = (community.memberIds || []).filter((id: string) => id !== userId)
     await db.srem(`user:${userId}:communities`, params.communityId)
+    if (remaining.length === 0) {
+      const pipeline = db.pipeline()
+      pipeline.del(`community:${params.communityId}`)
+      for (const groupId of community.groupIds || []) {
+        const rawGroup = await db.get(`group:${groupId}`)
+        if (rawGroup) {
+          const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
+          if (group.communityId === params.communityId) { delete (group as any).communityId; pipeline.set(`group:${groupId}`, JSON.stringify(group)) }
+        }
+      }
+      await pipeline.exec()
+      return Response.json({ success: true, deleted: true })
+    }
+    community.memberIds = remaining
+    if (community.ownerId === userId) {
+      community.ownerId = remaining[0]
+      community.adminIds = Array.from(new Set([...(community.adminIds || []).filter((id: string) => id !== userId), remaining[0]]))
+    } else {
+      community.adminIds = (community.adminIds || []).filter((id: string) => id !== userId)
+    }
   } else if (action === "update") {
     if (parsed.data.name !== undefined) community.name = parsed.data.name
     if (parsed.data.description !== undefined) community.description = parsed.data.description
