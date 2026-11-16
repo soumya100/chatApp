@@ -27,6 +27,24 @@ const sendMessagePayloadValidator = z.object({
     message: 'Message must contain either text or an attachment'
 })
 
+ 
+async function isValidReplyTarget(chatId: string, replyTo?: { id: string }) {
+    if (!replyTo) return true
+
+    const rawMessages = (await db.zrange(`chat:${chatId}:messages`, 0, -1)) as unknown[]
+    for (const raw of rawMessages) {
+        try {
+            const message = (typeof raw === 'string' ? JSON.parse(raw) : raw) as Message
+            if (message.id === replyTo.id) {
+                return message.senderId !== 'system' && !message.isDeleted
+            }
+        } catch {
+            continue
+        }
+    }
+    return false
+}
+
 export async function POST(req: Request) {
     try {
         const body = await req.json()
@@ -68,6 +86,9 @@ export async function POST(req: Request) {
             const isAdmin = (group.adminIds || [group.creatorId]).includes(session.user.id)
             if (group.settings?.onlyAdminsCanSendMessages && !isAdmin) {
                 return new Response('Only group admins can send messages', { status: 403 })
+            }
+            if (!(await isValidReplyTarget(chatId, payload.replyTo))) {
+                return new Response('Cannot reply to a deleted or system-generated message', { status: 400 })
             }
 
             const messageData = {
@@ -135,6 +156,9 @@ export async function POST(req: Request) {
 
         if (!isFriend) {
             return new Response('Unauthorized', { status: 401 })
+        }
+        if (!(await isValidReplyTarget(chatId, payload.replyTo))) {
+            return new Response('Cannot reply to a deleted or system-generated message', { status: 400 })
         }
 
         const messageData = {
