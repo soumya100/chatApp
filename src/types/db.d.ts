@@ -31,18 +31,32 @@ interface Message {
         senderName: string,
         text?: string,
         mediaType?: string
-    }
+    },
+    isPinned?: boolean,
+    pinnedAt?: number,
+    pinnedBy?: string,
+    mentions?: string[]
+}
+
+interface GroupSettings {
+    onlyAdminsCanEditInfo: boolean,
+    onlyAdminsCanAddMembers: boolean,
+    onlyAdminsCanSendMessages: boolean,
+    approvalRequired: boolean
 }
 
 interface Group {
     id: string,
     name: string,
     creatorId: string,
+    adminIds?: string[],
     memberIds: string[],
     description?: string,
     image?: string,
     createdAt: number,
-    lastMessage?: string
+    updatedAt?: number,
+    lastMessage?: string,
+    settings?: GroupSettings
 }
 
 interface Chat {
