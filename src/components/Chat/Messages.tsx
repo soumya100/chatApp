@@ -16,6 +16,7 @@ import {
   Loader2,
   Pause,
   Play,
+  Pin,
   Reply,
   RotateCcw,
   Smile,
@@ -456,6 +457,10 @@ const Messages: FC<MessagesProps> = ({
       )
     }
 
+    const pinHandler = (updated: Message) => {
+      setMessages(prev => prev.map(msg => msg.id === updated.id ? { ...msg, ...updated } : msg))
+    }
+
     // Partner read/seen messages
     const seenHandler = ({ readerId }: { readerId: string; seenAt: number }) => {
       if (readerId === chatPartner.id) {
@@ -472,6 +477,7 @@ const Messages: FC<MessagesProps> = ({
     channel.bind('message_deleted', deleteHandler)
     channel.bind('message_reacted', reactHandler)
     channel.bind('messages_seen', seenHandler)
+    channel.bind('message_pin_updated', pinHandler)
 
     return () => {
       pusherClient.unsubscribe(channelKey)
@@ -480,6 +486,7 @@ const Messages: FC<MessagesProps> = ({
       channel.unbind('message_deleted', deleteHandler)
       channel.unbind('message_reacted', reactHandler)
       channel.unbind('messages_seen', seenHandler)
+      channel.unbind('message_pin_updated', pinHandler)
     }
   }, [chatId, chatPartner.id, sessionId, setMessages])
 
@@ -794,6 +801,23 @@ const Messages: FC<MessagesProps> = ({
                       >
                         <Edit2 size={14} aria-hidden='true' />
                       </button>
+                    )}
+
+                    {/* Group pin control */}
+                    {isGroupChat && message.senderId !== 'system' && !message.isDeleted && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const groupId = chatId.replace('group--', '')
+                            const response = await axios.post(`/api/group/${groupId}/pin`, { messageId: message.id, pinned: !message.isPinned })
+                            setMessages(prev => prev.map(msg => msg.id === message.id ? { ...msg, ...response.data.message } : msg))
+                            toast.success(message.isPinned ? 'Message unpinned' : 'Message pinned')
+                          } catch (error: any) { toast.error(error?.response?.data?.message || 'Unable to update pin') }
+                        }}
+                        className='p-1 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 hover:text-indigo-600'
+                        title={message.isPinned ? 'Unpin message' : 'Pin message'}
+                        aria-label={message.isPinned ? 'Unpin message' : 'Pin message'}
+                      ><Pin size={14} aria-hidden='true' /></button>
                     )}
 
                     {/* Delete button (Sender only) */}
