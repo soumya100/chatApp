@@ -64,6 +64,7 @@ interface Group {
     updatedAt?: number,
     lastMessage?: string,
     settings?: GroupSettings
+    communityId?: string
 }
 
 interface Chat {
