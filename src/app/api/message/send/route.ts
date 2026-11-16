@@ -88,7 +88,7 @@ export async function POST(req: Request) {
             if (!groupRaw) return new Response('Group not found', { status: 404 })
             const group = (typeof groupRaw === 'string' ? JSON.parse(groupRaw) : groupRaw) as Group
             const isAdmin = (group.adminIds || [group.creatorId]).includes(session.user.id)
-            if (group.settings?.onlyAdminsCanSendMessages && !isAdmin) {
+            if ((group.settings?.onlyAdminsCanSendMessages || group.settings?.announcementsOnly) && !isAdmin) {
                 return new Response('Only group admins can send messages', { status: 403 })
             }
             if (!(await isValidReplyTarget(chatId, payload.replyTo))) {
@@ -101,6 +101,7 @@ export async function POST(req: Request) {
                 senderId: session.user.id,
                 text,
                 timestamp: timeStamp,
+                expiresAt: group.settings?.disappearingMessagesSeconds ? timeStamp + group.settings.disappearingMessagesSeconds * 1000 : undefined,
                 mediaUrl: payload.mediaUrl,
                 mediaType: payload.mediaType,
                 fileName: payload.fileName,
