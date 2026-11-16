@@ -156,7 +156,11 @@ export function useVideoNoteRecorder(
     return new Promise<void>((resolve) => {
       mediaRecorder.onstop = async () => {
         try {
-          const mime = mediaRecorder.mimeType || 'video/webm'
+          // MediaRecorder may append codec parameters (for example,
+          // "video/webm;codecs=vp8,opus"). Use the base MIME type for Blob
+          // storage metadata while keeping the encoded bytes unchanged.
+          const recordedMime = mediaRecorder.mimeType || 'video/webm'
+          const mime = recordedMime.split(';')[0].trim().toLowerCase()
           const videoBlob = new Blob(chunksRef.current, { type: mime })
 
           if (videoBlob.size === 0) {

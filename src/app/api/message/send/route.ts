@@ -63,7 +63,12 @@ export async function POST(req: Request) {
             }
 
             const groupRaw = await db.get(`group:${groupId}`)
+            if (!groupRaw) return new Response('Group not found', { status: 404 })
             const group = (typeof groupRaw === 'string' ? JSON.parse(groupRaw) : groupRaw) as Group
+            const isAdmin = (group.adminIds || [group.creatorId]).includes(session.user.id)
+            if (group.settings?.onlyAdminsCanSendMessages && !isAdmin) {
+                return new Response('Only group admins can send messages', { status: 403 })
+            }
 
             const messageData = {
                 id: nanoid(),

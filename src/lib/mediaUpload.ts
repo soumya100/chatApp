@@ -13,6 +13,14 @@ export interface UploadedMediaResponse {
  * the Next.js serverless function.
  */
 export async function uploadMedia(file: File): Promise<UploadedMediaResponse> {
+  const maxUploadSize = 30 * 1024 * 1024
+  if (file.size > maxUploadSize) {
+    throw new Error('Media files cannot exceed 30MB. Please record a shorter video note.')
+  }
+  if (!file.type || !/^(image|video|audio)\//i.test(file.type.split(';')[0])) {
+    throw new Error('This media format is not supported.')
+  }
+
   const blob = await upload(file.name, file, {
     access: "public",
     handleUploadUrl: "/api/upload",

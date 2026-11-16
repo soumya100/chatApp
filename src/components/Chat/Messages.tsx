@@ -544,6 +544,26 @@ const Messages: FC<MessagesProps> = ({
   // Handle message delete with custom SAAS dialog confirmation
   const confirmDelete = async () => {
     if (!deleteConfirmMessageId) return
+
+    const selectedMessage = messages.find((msg) => msg.id === deleteConfirmMessageId)
+    if (!selectedMessage) {
+      setDeleteConfirmMessageId(null)
+      return
+    }
+
+    // Optimistic messages that failed to persist do not exist in Redis and
+    // therefore cannot be deleted through the server endpoint.
+    if (
+      selectedMessage.status === 'error' ||
+      selectedMessage.status === 'sending' ||
+      selectedMessage.id.startsWith('temp-')
+    ) {
+      setMessages((prev) => prev.filter((msg) => msg.id !== deleteConfirmMessageId))
+      setDeleteConfirmMessageId(null)
+      toast.success('Unsent message removed')
+      return
+    }
+
     setIsDeleting(true)
 
     try {
