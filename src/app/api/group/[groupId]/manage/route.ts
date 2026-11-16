@@ -17,7 +17,13 @@ const schema = z.discriminatedUnion("action", [
             onlyAdminsCanEditInfo: z.boolean().optional(),
             onlyAdminsCanAddMembers: z.boolean().optional(),
             onlyAdminsCanSendMessages: z.boolean().optional(),
-            approvalRequired: z.boolean().optional()
+            approvalRequired: z.boolean().optional(),
+            disappearingMessagesSeconds: z.number().int().min(0).max(31536000).optional(),
+            onlyAdminsCanPinMessages: z.boolean().optional(),
+            onlyAdminsCanCreatePolls: z.boolean().optional(),
+            onlyAdminsCanCreateEvents: z.boolean().optional(),
+            announcementsOnly: z.boolean().optional(),
+            allowMemberInvites: z.boolean().optional()
         }).optional()
     }),
     z.object({ action: z.literal("promote"), memberId: z.string().min(1) }),
@@ -77,6 +83,12 @@ export async function POST(req: Request, { params }: { params: { groupId: string
                     onlyAdminsCanAddMembers: false,
                     onlyAdminsCanSendMessages: false,
                     approvalRequired: false,
+                    disappearingMessagesSeconds: 0,
+                    onlyAdminsCanPinMessages: false,
+                    onlyAdminsCanCreatePolls: false,
+                    onlyAdminsCanCreateEvents: false,
+                    announcementsOnly: false,
+                    allowMemberInvites: true,
                     ...group.settings,
                     ...data.settings
                 },
