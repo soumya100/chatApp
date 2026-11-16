@@ -37,7 +37,19 @@ export async function uploadMedia(file: File): Promise<UploadedMediaResponse> {
     throw new Error('This file format is not supported. Supported files: images, videos, audio, PDF, DOC/DOCX, TXT and ZIP.')
   }
 
-  const blob = await upload(file.name, file, {
+  const canonicalDocumentMimeTypes: Record<string, string> = {
+    pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    txt: 'text/plain',
+    zip: 'application/zip',
+  }
+  const uploadBody =
+    isSupportedDocument && (!mimeType || mimeType === 'application/octet-stream')
+      ? file.slice(0, file.size, canonicalDocumentMimeTypes[extension])
+      : file
+
+  const blob = await upload(file.name, uploadBody, {
     access: "public",
     handleUploadUrl: "/api/upload",
   })
