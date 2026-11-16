@@ -61,14 +61,22 @@ export async function POST(req: Request, { params }: { params: { groupId: string
                 ...(data.name !== undefined ? { name: data.name } : {}),
                 ...(data.description !== undefined ? { description: data.description } : {}),
                 ...(data.image !== undefined ? { image: data.image } : {}),
-                settings: { ...group.settings, ...data.settings } as GroupSettings,
+                settings: {
+                    onlyAdminsCanEditInfo: false,
+                    onlyAdminsCanAddMembers: false,
+                    onlyAdminsCanSendMessages: false,
+                    approvalRequired: false,
+                    ...group.settings,
+                    ...data.settings
+                },
                 updatedAt: Date.now()
             }
         } else if (action === "leave") {
             const remaining = memberIds.filter(id => id !== actorId)
             if (remaining.length === 0) {
                 const pipeline = db.pipeline()
-                pipeline.del(`group:${groupId}`, `group:${groupId}:members`, `user:${actorId}:groups`, `chat:group--${groupId}:messages`)
+                pipeline.del(`group:${groupId}`, `group:${groupId}:members`, `chat:group--${groupId}:messages`)
+                pipeline.srem(`user:${actorId}:groups`, groupId)
                 await pipeline.exec()
                 return Response.json({ success: true, deleted: true })
             }
@@ -108,13 +116,12 @@ export async function POST(req: Request, { params }: { params: { groupId: string
             updatedGroup.updatedAt = Date.now()
         }
 
-        const removedIds = action === "leave"
+        const removedIds: string[] = action === "leave"
             ? [actorId]
-            : action === "remove" ? [parsed.data.memberId] : []
+            : action === "remove" && "memberId" in parsed.data ? [parsed.data.memberId] : []
 
         const pipeline = db.pipeline()
         pipeline.set(`group:${groupId}`, JSON.stringify(updatedGroup))
-        pipeline.del(...removedIds.map(id => `user:${id}:groups`))
         for (const id of removedIds) {
             pipeline.srem(`group:${groupId}:members`, id)
             pipeline.srem(`user:${id}:groups`, groupId)
