@@ -43,6 +43,12 @@ interface GroupSettings {
     onlyAdminsCanAddMembers: boolean,
     onlyAdminsCanSendMessages: boolean,
     approvalRequired: boolean
+    disappearingMessagesSeconds?: number
+    onlyAdminsCanPinMessages?: boolean
+    onlyAdminsCanCreatePolls?: boolean
+    onlyAdminsCanCreateEvents?: boolean
+    announcementsOnly?: boolean
+    allowMemberInvites?: boolean
 }
 
 interface Group {
