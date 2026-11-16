@@ -56,6 +56,10 @@ export async function POST(req: Request) {
             return new Response('Message not found', { status: 404 })
         }
 
+        if (targetMessage.senderId === 'system' || targetMessage.isDeleted) {
+            return new Response('System-generated or already deleted messages cannot be deleted', { status: 400 })
+        }
+
         // Only sender can delete their message
         if (targetMessage.senderId !== session.user.id) {
             return new Response('Forbidden: You can only delete your own messages', { status: 403 })

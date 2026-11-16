@@ -330,12 +330,14 @@ const Messages: FC<MessagesProps> = ({
 
   // Touch gesture handlers for mobile / Android swiping to reply
   const handleTouchStart = (messageId: string, e: React.TouchEvent) => {
+    if (messages.find((message) => message.id === messageId)?.isDeleted) return
     touchStartX.current = e.touches[0].clientX
     touchStartY.current = e.touches[0].clientY
     isHorizontalGesture.current = null
   }
 
   const handleTouchMove = (messageId: string, e: React.TouchEvent) => {
+    if (messages.find((message) => message.id === messageId)?.isDeleted) return
     const diffX = e.touches[0].clientX - touchStartX.current
     const diffY = e.touches[0].clientY - touchStartY.current
 
@@ -356,7 +358,7 @@ const Messages: FC<MessagesProps> = ({
   }
 
   const handleTouchEnd = (message: Message) => {
-    if (swipingMessageId === message.id && swipeOffset >= 50) {
+    if (!message.isDeleted && swipingMessageId === message.id && swipeOffset >= 50) {
       onReplyToMessage?.(message)
     }
     setSwipingMessageId(null)
@@ -667,10 +669,10 @@ const Messages: FC<MessagesProps> = ({
           <div
             id={`message-${message.id}`}
             key={`${message.id}-${message.timestamp}`}
-            onDoubleClick={() => onReplyToMessage?.(message)}
-            onTouchStart={(e) => handleTouchStart(message.id, e)}
-            onTouchMove={(e) => handleTouchMove(message.id, e)}
-            onTouchEnd={() => handleTouchEnd(message)}
+            onDoubleClick={message.isDeleted ? undefined : () => onReplyToMessage?.(message)}
+            onTouchStart={message.isDeleted ? undefined : (e) => handleTouchStart(message.id, e)}
+            onTouchMove={message.isDeleted ? undefined : (e) => handleTouchMove(message.id, e)}
+            onTouchEnd={message.isDeleted ? undefined : () => handleTouchEnd(message)}
             className={cn('group relative transition-all duration-200 select-text', {
               'ring-2 ring-yellow-400/80 rounded-2xl p-1 bg-yellow-50/20': isMatch,
               'ring-2 ring-indigo-500 rounded-2xl p-1 bg-indigo-50/30 dark:bg-indigo-950/30':
