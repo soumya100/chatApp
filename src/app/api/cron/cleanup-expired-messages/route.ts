@@ -136,7 +136,7 @@ export async function GET(req: Request) {
       }
 
       hasMore = due.length === 100
-      if (!hasMore) break
+      if (blobFailures > 0 || !hasMore) break
     }
 
     return Response.json({ success: true, inspected, deleted, blobFailures, hasMore, batches, ranAt: now })
