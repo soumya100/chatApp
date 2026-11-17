@@ -118,10 +118,17 @@ export async function POST(req: Request) {
 
             // Persist message to group chat history
             operation = 'persist group message'
-            await db.zadd(`chat:${chatId}:messages`, {
-                score: timeStamp,
-                member: JSON.stringify(message)
-            })
+            const serializedMessage = JSON.stringify(message)
+            const messageKey = `chat:${chatId}:messages`
+            const persistence = db.pipeline()
+            persistence.zadd(messageKey, { score: timeStamp, member: serializedMessage })
+            if (message.expiresAt) {
+                persistence.zadd("chat:expiring", {
+                    score: message.expiresAt,
+                    member: JSON.stringify({ chatKey: messageKey, messageId: message.id, raw: serializedMessage })
+                })
+            }
+            await persistence.exec()
 
             // Broadcast after persistence. Pusher payloads must stay small: profile images
             // may be stored as data URLs and exceed Pusher's event-size limit.
