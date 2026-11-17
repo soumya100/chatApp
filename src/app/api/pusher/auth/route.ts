@@ -1,4 +1,5 @@
 import { authOptions } from '@/lib/auth'
+import { db } from '@/lib/db'
 import { pusherServer } from '@/lib/pusher'
 import { getServerSession } from 'next-auth'
 
@@ -29,7 +30,6 @@ export async function POST(req: Request) {
 
         const isPresence = channelName.startsWith('presence-')
 
-        // Authorization checks
         if (channelName.startsWith('private-user__')) {
             const userId = channelName.replace('private-user__', '').split('__')[0]
             if (userId !== session.user.id) {
@@ -38,12 +38,23 @@ export async function POST(req: Request) {
         } else if (channelName.startsWith('private-chat__') || channelName.startsWith('presence-chat__')) {
             const prefix = channelName.startsWith('presence-') ? 'presence-chat__' : 'private-chat__'
             const chatId = channelName.replace(prefix, '')
-            const [userId1, userId2] = chatId.split('--')
-            if (session.user.id !== userId1 && session.user.id !== userId2) {
-                return new Response('Forbidden', { status: 403 })
+
+            // Group channel IDs have the form group--<groupId>; they must not
+            // be interpreted as the two participant IDs of a direct chat.
+            if (chatId.startsWith('group--')) {
+                const groupId = chatId.slice('group--'.length)
+                const isMember = await db.sismember(`group:${groupId}:members`, session.user.id)
+                if (!isMember) return new Response('Forbidden', { status: 403 })
+            } else {
+                const ids = chatId.split('--')
+                if (ids.length !== 2 || !ids.includes(session.user.id)) {
+                    return new Response('Forbidden', { status: 403 })
+                }
             }
         } else if (channelName.startsWith('presence-online-users')) {
-            // All authenticated users can join global presence
+            // All authenticated users can join global presence.
+        } else {
+            return new Response('Forbidden', { status: 403 })
         }
 
         const presenceData = isPresence
