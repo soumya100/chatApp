@@ -107,15 +107,15 @@ export async function POST(req: Request, { params }: { params: { groupId: string
 
     const now = Date.now()
     let payload: Record<string, any>
-    if (action === "createPoll") {
+    if (parsed.data.action === "createPoll") {
       payload = { id: nanoid(), question: parsed.data.question, options: parsed.data.options.map(label => ({ id: nanoid(), label, votes: [] })), multiple: parsed.data.multiple, createdBy: userId, createdAt: now, closed: false }
-    } else if (action === "createEvent") {
+    } else if (parsed.data.action === "createEvent") {
       if (parsed.data.startsAt < now) return Response.json({ message: "Event must be in the future" }, { status: 400 })
       const { action: _action, ...eventData } = parsed.data
       payload = { id: nanoid(), ...eventData, createdBy: userId, createdAt: now, responses: { going: [], maybe: [], "not-going": [] } }
-    } else if (action === "announce") {
+    } else if (parsed.data.action === "announce") {
       payload = { id: nanoid(), text: parsed.data.text, createdBy: userId, createdAt: now }
-    } else if (action === "votePoll") {
+    } else if (parsed.data.action === "votePoll") {
       payload = { pollId: parsed.data.pollId, optionIds: Array.from(new Set(parsed.data.optionIds)) }
     } else {
       payload = { eventId: parsed.data.eventId, response: parsed.data.response }
