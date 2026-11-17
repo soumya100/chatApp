@@ -20,18 +20,18 @@ local current = redis.call("GET", KEYS[1])
 if current ~= ARGV[1] then return 0 end
 local operations = cjson.decode(ARGV[3])
 for _, op in ipairs(operations) do
-  if op.type == "casSet" and redis.call("GET", op.key) ~= op.expected then return 0 end
+  if op.type == "casSet" and redis.call("GET", KEYS[op.keyIndex]) ~= op.expected then return 0 end
 end
 if ARGV[2] == "__DELETE__" then redis.call("DEL", KEYS[1]) else redis.call("SET", KEYS[1], ARGV[2]) end
 for _, op in ipairs(operations) do
   if op.type == "casSet" or op.type == "set" then
-    redis.call("SET", op.key, op.value)
+    redis.call("SET", KEYS[op.keyIndex], op.value)
   elseif op.type == "del" then
-    redis.call("DEL", op.key)
+    redis.call("DEL", KEYS[op.keyIndex])
   elseif op.type == "sadd" then
-    redis.call("SADD", op.key, op.value)
+    redis.call("SADD", KEYS[op.keyIndex], op.value)
   elseif op.type == "srem" then
-    redis.call("SREM", op.key, op.value)
+    redis.call("SREM", KEYS[op.keyIndex], op.value)
   end
 end
 return 1
@@ -101,8 +101,9 @@ export async function POST(req: Request, { params }: { params: { communityId: st
 
         next.groupIds = Array.from(new Set([...next.groupIds, groupId]))
         const groupMembers = await db.smembers(`group:${groupId}:members`) as string[]
-        next.memberIds = Array.from(new Set([...next.memberIds, ...(groupMembers || []), group.creatorId]))
-        for (const memberId of groupMembers || []) ops.push({ type: "sadd", key: `user:${memberId}:communities`, value: params.communityId })
+        const linkedMembers = Array.from(new Set([...(groupMembers || []), group.creatorId]))
+        next.memberIds = Array.from(new Set([...next.memberIds, ...linkedMembers]))
+        for (const memberId of linkedMembers) ops.push({ type: "sadd", key: `user:${memberId}:communities`, value: params.communityId })
         ops.push({ type: "casSet", key: groupKey, expected: expectedGroupRaw, value: JSON.stringify({ ...group, communityId: params.communityId, updatedAt: Date.now() }) })
       } else if (parsed.data.action === "removeGroup") {
         const groupId = parsed.data.groupId
@@ -131,6 +132,7 @@ export async function POST(req: Request, { params }: { params: { communityId: st
       } else if (parsed.data.action === "removeMember") {
         const targetId = parsed.data.memberId
         if (targetId === community.ownerId) return Response.json({ message: "Transfer ownership before removing the owner" }, { status: 400 })
+        if (!next.memberIds.includes(targetId)) return Response.json({ message: "User is not a community member" }, { status: 404 })
         next.memberIds = next.memberIds.filter((id: string) => id !== targetId)
         next.adminIds = next.adminIds.filter((id: string) => id !== targetId)
         ops.push({ type: "srem", key: `user:${targetId}:communities`, value: params.communityId })
@@ -140,6 +142,9 @@ export async function POST(req: Request, { params }: { params: { communityId: st
         ops.push({ type: "srem", key: `user:${userId}:communities`, value: params.communityId })
         if (next.memberIds.length === 0) {
           deleteCommunity = true
+          const inviteIds = await db.smembers(`community:${params.communityId}:invites`) as string[]
+          for (const inviteeId of inviteIds || []) ops.push({ type: "srem", key: `user:${inviteeId}:community-invites`, value: params.communityId })
+          ops.push({ type: "del", key: `community:${params.communityId}:invites` })
           for (const groupId of next.groupIds) {
             const groupKey = `group:${groupId}`
             const groupRaw = await db.get(groupKey)
@@ -158,10 +163,19 @@ export async function POST(req: Request, { params }: { params: { communityId: st
       }
 
       next.updatedAt = Date.now()
-      const result = await db.eval(atomicCommunityMutation, [communityKey], [
+      const redisKeys = [communityKey]
+      const indexedOps = ops.map(operation => {
+        let index = redisKeys.indexOf(operation.key)
+        if (index === -1) {
+          redisKeys.push(operation.key)
+          index = redisKeys.length - 1
+        }
+        return { ...operation, keyIndex: index + 1 }
+      })
+      const result = await db.eval(atomicCommunityMutation, redisKeys, [
         expectedRaw,
         deleteCommunity ? "__DELETE__" : JSON.stringify(next),
-        JSON.stringify(ops)
+        JSON.stringify(indexedOps)
       ])
       if (Number(result) === 1) {
         return Response.json({ success: true, deleted: deleteCommunity, community: deleteCommunity ? undefined : next })
