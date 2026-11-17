@@ -135,11 +135,11 @@ export async function GET(req: Request) {
         deleted += Number(results?.[0] || 0)
       }
 
-      hasMore = due.length === 100
+      hasMore = due.length === 100 || blobFailures > 0
       if (blobFailures > 0 || !hasMore) break
     }
 
-    return Response.json({ success: true, inspected, deleted, blobFailures, hasMore, batches, ranAt: now })
+    return Response.json({ success: blobFailures === 0, inspected, deleted, blobFailures, hasMore, batches, ranAt: now }, { status: blobFailures > 0 ? 503 : 200 })
   } catch (error) {
     console.error("[cron/cleanup-expired-messages] Cleanup failed:", error)
     return Response.json({ message: "Cleanup failed" }, { status: 500 })
