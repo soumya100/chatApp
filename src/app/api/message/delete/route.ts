@@ -3,12 +3,22 @@ import { db } from "@/lib/db"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
 import { getServerSession } from "next-auth"
+import { del } from "@vercel/blob"
 import { z } from "zod"
 
 const deleteValidator = z.object({
     messageId: z.string(),
     chatId: z.string()
 })
+
+function isOwnedVercelBlob(url: string) {
+    try {
+        const parsed = new URL(url)
+        return parsed.protocol === "https:" && parsed.hostname.endsWith(".public.blob.vercel-storage.com")
+    } catch {
+        return false
+    }
+}
 
 export async function POST(req: Request) {
     try {
@@ -33,7 +43,6 @@ export async function POST(req: Request) {
             }
         }
 
-        // Fetch recent messages to locate the target message
         const rawMembers = (await db.zrange(`chat:${chatId}:messages`, 0, -1)) as unknown[]
         let oldMemberString: string | null = null
         let targetMessage: Message | null = null
@@ -60,37 +69,53 @@ export async function POST(req: Request) {
             return new Response('System-generated or already deleted messages cannot be deleted', { status: 400 })
         }
 
-        // Only sender can delete their message
         if (targetMessage.senderId !== session.user.id) {
             return new Response('Forbidden: You can only delete your own messages', { status: 403 })
+        }
+
+        // Delete our own Vercel Blob object before replacing the Redis record.
+        // If deletion fails, leave the original message intact so the caller can retry.
+        if (targetMessage.mediaUrl && isOwnedVercelBlob(targetMessage.mediaUrl)) {
+            try {
+                await del(targetMessage.mediaUrl)
+            } catch (error) {
+                console.error("[message/delete] Blob deletion failed:", error)
+                return Response.json({ message: "Unable to permanently delete the attachment. Please retry." }, { status: 502 })
+            }
         }
 
         const updatedMessage: Message = {
             ...targetMessage,
             text: 'This message was deleted',
-            isDeleted: true
+            isDeleted: true,
+            mediaUrl: undefined,
+            mediaType: undefined,
+            fileName: undefined,
+            fileSize: undefined,
+            duration: undefined,
+            senderImg: undefined
         }
 
-        // Atomic swap in Redis sorted set
         await db.zrem(`chat:${chatId}:messages`, oldMemberString)
         await db.zadd(`chat:${chatId}:messages`, {
             score: targetMessage.timestamp,
             member: JSON.stringify(updatedMessage)
         })
 
-        // Broadcast deletion event to connected chat room clients
-        await pusherServer.trigger(
-            toPusherKey(`private-chat:${chatId}`),
-            'message_deleted',
-            { messageId }
-        )
+        await Promise.allSettled([
+            pusherServer.trigger(
+                toPusherKey(`private-chat:${chatId}`),
+                'message_deleted',
+                { messageId }
+            )
+        ])
 
         return new Response('OK')
     } catch (error) {
         if (error instanceof z.ZodError) {
             return new Response('Invalid request payload', { status: 422 })
         }
+        console.error("[message/delete] Failed:", error)
         return new Response('Internal server error', { status: 500 })
     }
 }
-

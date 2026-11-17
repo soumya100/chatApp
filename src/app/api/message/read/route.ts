@@ -19,10 +19,21 @@ export async function POST(req: Request) {
         const body = await req.json()
         const { chatId } = readPayloadValidator.parse(body)
 
-        // Clear the unread count for this chat for the authenticated user
-        await db.hdel(`user:${session.user.id}:unread`, chatId)
+        // A group read receipt is visible only when the reader has opted in.
+        if (chatId.startsWith('group--')) {
+            const groupId = chatId.slice('group--'.length)
+            const isMember = await db.sismember(`group:${groupId}:members`, session.user.id)
+            if (!isMember) return new Response('Forbidden', { status: 403 })
+            await db.hdel(`user:${session.user.id}:unread`, chatId)
+            const rawPreferences = await db.get(`user:${session.user.id}:group-preferences:${groupId}`)
+            const preferences = (typeof rawPreferences === 'string' ? JSON.parse(rawPreferences) : rawPreferences) || {}
+            if (preferences.showReadReceipts === false) return new Response('OK')
+        } else {
+            const ids = chatId.split('--')
+            if (ids.length !== 2 || !ids.includes(session.user.id)) return new Response('Forbidden', { status: 403 })
+            await db.hdel(`user:${session.user.id}:unread`, chatId)
+        }
 
-        // Broadcast messages_seen to notify chat partner in real-time
         await pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), 'messages_seen', {
             readerId: session.user.id,
             seenAt: Date.now()

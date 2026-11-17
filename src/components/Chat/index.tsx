@@ -55,6 +55,15 @@ const Chat: FC<ChatProps> = ({
   )
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  const jumpToPinnedMessage = (messageId: string) => {
+    const element = document.getElementById(`message-${messageId}`)
+    if (!element) {
+      toast("This message is not in the currently loaded history")
+      return
+    }
+    element.scrollIntoView({ behavior: "smooth", block: "center" })
+  }
+
   useEffect(() => {
     setMessages(initialMessages)
   }, [initialMessages])
@@ -83,6 +92,17 @@ const Chat: FC<ChatProps> = ({
     // 2. Private channel for typing indicators
     const privateChannelKey = toPusherKey(`private-chat:${chatId}`)
     const privateChannel = pusherClient.subscribe(privateChannelKey)
+    const userGroupsChannelKey = isGroupChat ? toPusherKey(`private-user:${sessionId}:groups`) : null
+    const userGroupsChannel = userGroupsChannelKey ? pusherClient.subscribe(userGroupsChannelKey) : null
+
+    const groupRemovedHandler = ({ groupId: removedGroupId }: { groupId: string }) => {
+      if (removedGroupId !== groupId) return
+      toast.error("You were removed from this group")
+      pusherClient.unsubscribe(presenceChannelKey)
+      pusherClient.unsubscribe(privateChannelKey)
+      if (userGroupsChannelKey) pusherClient.unsubscribe(userGroupsChannelKey)
+      router.push("/dashboard/chats")
+    }
 
     const typingHandler = ({ userId, isTyping: typingState }: { userId: string; isTyping: boolean }) => {
       if (userId === chatPartner.id) {
@@ -114,15 +134,18 @@ const Chat: FC<ChatProps> = ({
 
     privateChannel.bind('user_typing', typingHandler)
     privateChannel.bind('group_members_updated', groupMembersUpdatedHandler)
+    userGroupsChannel?.bind('group_removed', groupRemovedHandler)
 
     return () => {
       pusherClient.unsubscribe(presenceChannelKey)
       pusherClient.unsubscribe(privateChannelKey)
       privateChannel.unbind('user_typing', typingHandler)
       privateChannel.unbind('group_members_updated', groupMembersUpdatedHandler)
+      userGroupsChannel?.unbind('group_removed', groupRemovedHandler)
+      if (userGroupsChannelKey) pusherClient.unsubscribe(userGroupsChannelKey)
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
     }
-  }, [chatId, chatPartner.id])
+  }, [chatId, chatPartner.id, groupId, isGroupChat, router, sessionId])
 
   // Optimistic message sending handler
   const handleSendMessage = async (text: string, mediaPayload: any = {}) => {
@@ -306,7 +329,7 @@ const Chat: FC<ChatProps> = ({
         </div>
       </div>
 
-      {isGroupChat && <PinnedMessagesBanner groupId={groupId} />}
+      {isGroupChat && <PinnedMessagesBanner groupId={groupId} onJumpTo={jumpToPinnedMessage} />}
 
       <Messages
         initialMessages={initialMessages}

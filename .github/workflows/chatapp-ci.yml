@@ -1,0 +1,62 @@
+name: ChatApp CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feat/complete-group-experience
+  push:
+    branches:
+      - main
+      - feat/complete-group-experience
+      - fix/production-readiness-pr8
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chatapp-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Install, typecheck, lint and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      UPSTASH_REDIS_REST_URL: https://example.upstash.io
+      UPSTASH_REDIS_REST_TOKEN: build-only-placeholder
+      NEXTAUTH_SECRET: build-only-placeholder-secret
+      NEXTAUTH_URL: http://localhost:3000
+      PUSHER_APP_ID: "123456"
+      NEXT_PUBLIC_PUSHER_APP_KEY: build-only-placeholder
+      PUSHER_APP_SECRET: build-only-placeholder
+      PUSHER_APP_CLUSTER: ap2
+      NEXT_PUBLIC_PUSHER_APP_CLUSTER: ap2
+      BLOB_READ_WRITE_TOKEN: build-only-placeholder
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Activate Yarn Classic
+        run: corepack prepare yarn@1.22.22 --activate
+
+      # The base branch currently has known lockfile drift. Use the same
+      # non-frozen install behavior as the existing Vercel deployment.
+      - name: Install dependencies
+        run: yarn install --non-interactive
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Production build
+        run: yarn build
