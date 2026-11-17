@@ -55,6 +55,15 @@ const Chat: FC<ChatProps> = ({
   )
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  const jumpToPinnedMessage = (messageId: string) => {
+    const element = document.getElementById(`message-${messageId}`)
+    if (!element) {
+      toast("This message is not in the currently loaded history")
+      return
+    }
+    element.scrollIntoView({ behavior: "smooth", block: "center" })
+  }
+
   useEffect(() => {
     setMessages(initialMessages)
   }, [initialMessages])
@@ -306,7 +315,7 @@ const Chat: FC<ChatProps> = ({
         </div>
       </div>
 
-      {isGroupChat && <PinnedMessagesBanner groupId={groupId} />}
+      {isGroupChat && <PinnedMessagesBanner groupId={groupId} onJumpTo={jumpToPinnedMessage} />}
 
       <Messages
         initialMessages={initialMessages}
