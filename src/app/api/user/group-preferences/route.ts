@@ -24,7 +24,12 @@ export async function GET(req: Request) {
   if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
   const raw = await db.get(`user:${userId}:group-preferences:${groupId}`)
   const stored = (typeof raw === "string" ? JSON.parse(raw) : raw) || {}
-  return Response.json({ preferences: { ...defaults, ...stored } })
+  const preferences = {
+    notifications: stored.notifications === "muted" ? "muted" : "all",
+    showReadReceipts: stored.showReadReceipts !== false,
+    hideProfilePhoto: stored.hideProfilePhoto === true
+  }
+  return Response.json({ preferences })
 }
 
 export async function PUT(req: Request) {
@@ -40,7 +45,12 @@ export async function PUT(req: Request) {
   if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
   const key = `user:${userId}:group-preferences:${groupId}`
   const raw = await db.get(key)
-  const current = { ...defaults, ...((typeof raw === "string" ? JSON.parse(raw) : raw) || {}) }
+  const stored = (typeof raw === "string" ? JSON.parse(raw) : raw) || {}
+  const current = {
+    notifications: stored.notifications === "muted" ? "muted" as const : "all" as const,
+    showReadReceipts: stored.showReadReceipts !== false,
+    hideProfilePhoto: stored.hideProfilePhoto === true
+  }
   const preferences = { ...current, ...changes, updatedAt: Date.now() }
   await db.set(key, JSON.stringify(preferences))
   return Response.json({ success: true, preferences })
