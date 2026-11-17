@@ -29,6 +29,7 @@ export async function POST(req: Request) {
         }
 
         const isPresence = channelName.startsWith('presence-')
+        let presenceGroupId: string | null = null
 
         if (channelName.startsWith('private-user__')) {
             const userId = channelName.replace('private-user__', '').split('__')[0]
@@ -45,6 +46,7 @@ export async function POST(req: Request) {
                 const groupId = chatId.slice('group--'.length)
                 const isMember = await db.sismember(`group:${groupId}:members`, session.user.id)
                 if (!isMember) return new Response('Forbidden', { status: 403 })
+                if (isPresence) presenceGroupId = groupId
             } else {
                 const ids = chatId.split('--')
                 if (ids.length !== 2 || !ids.includes(session.user.id)) {
@@ -57,13 +59,20 @@ export async function POST(req: Request) {
             return new Response('Forbidden', { status: 403 })
         }
 
+        let hidePresencePhoto = false
+        if (isPresence && presenceGroupId) {
+            const rawPreferences = await db.get(`user:${session.user.id}:group-preferences:${presenceGroupId}`)
+            const preferences = (typeof rawPreferences === 'string' ? JSON.parse(rawPreferences) : rawPreferences) || {}
+            hidePresencePhoto = preferences.hideProfilePhoto === true
+        }
+
         const presenceData = isPresence
             ? {
                 user_id: session.user.id,
                 user_info: {
                     name: session.user.name || '',
                     email: session.user.email || '',
-                    image: session.user.image || '',
+                    image: hidePresencePhoto ? '' : session.user.image || '',
                 },
             }
             : undefined
