@@ -20,6 +20,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   const [eventDescription, setEventDescription] = useState("")
   const [eventDate, setEventDate] = useState("")
   const [busy, setBusy] = useState(false)
+  const [pollSelections, setPollSelections] = useState<Record<string, string[]>>({})
 
   const load = async () => {
     setLoading(true)
@@ -38,6 +39,23 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   }
 
   const createPoll = async (e: FormEvent) => { e.preventDefault(); await act({ action: "createPoll", question, options: options.map(x => x.trim()).filter(Boolean), multiple }); setQuestion(""); setOptions(["", ""]) }
+  const togglePollOption = (poll: any, optionId: string) => {
+    if (!poll.multiple) {
+      void act({ action: "votePoll", pollId: poll.id, optionIds: [optionId] })
+      return
+    }
+    const selected = pollSelections[poll.id] ?? poll.myOptionIds ?? []
+    setPollSelections(prev => ({
+      ...prev,
+      [poll.id]: selected.includes(optionId) ? selected.filter(id => id !== optionId) : [...selected, optionId]
+    }))
+  }
+  const submitPollVote = async (poll: any) => {
+    const optionIds = pollSelections[poll.id] ?? poll.myOptionIds ?? []
+    if (!optionIds.length) return
+    await act({ action: "votePoll", pollId: poll.id, optionIds })
+    setPollSelections(prev => ({ ...prev, [poll.id]: optionIds }))
+  }
   const createEvent = async (e: FormEvent) => { e.preventDefault(); if (!eventDate) return; await act({ action: "createEvent", title: eventTitle, description: eventDescription, startsAt: new Date(eventDate).getTime() }); setEventTitle(""); setEventDescription(""); setEventDate("") }
 
   return (
@@ -65,7 +83,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
               </form>
             </section>
             {isAdmin && <section className="rounded-xl border border-gray-200 dark:border-zinc-800 p-4"><h3 className="font-semibold text-sm mb-2 flex gap-2 items-center"><Megaphone size={16}/> Post announcement</h3><textarea value={announcement} onChange={e=>setAnnouncement(e.target.value)} rows={2} maxLength={2000} placeholder="Write an announcement..." className="w-full rounded-lg bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 px-3 py-2 text-sm"/><button disabled={busy || !announcement.trim()} onClick={async()=>{await act({action:"announce",text:announcement});setAnnouncement("")}} className="mt-2 rounded-lg bg-indigo-600 text-white px-3 py-2 text-xs font-semibold disabled:opacity-50">Publish</button></section>}
-            <section><h3 className="font-semibold text-sm mb-2">Polls</h3>{features.polls.length===0?<p className="text-xs text-gray-500">No polls yet.</p>:features.polls.map(poll=><div key={poll.id} className="rounded-xl border border-gray-200 dark:border-zinc-800 p-3 mb-2"><p className="text-sm font-medium mb-2">{poll.question}</p><div className="space-y-1">{poll.options.map((option:any)=><button key={option.id} disabled={busy || poll.closed} onClick={()=>act({action:"votePoll",pollId:poll.id,optionIds:[option.id]})} className="w-full flex items-center justify-between rounded-lg bg-gray-50 dark:bg-zinc-800 px-3 py-2 text-xs text-left"><span>{option.label}</span><span className="text-gray-500">{option.votes?.length||0} <Check size={12} className="inline"/></span></button>)}</div></div>)}</section>
+            <section><h3 className="font-semibold text-sm mb-2">Polls</h3>{features.polls.length===0?<p className="text-xs text-gray-500">No polls yet.</p>:features.polls.map(poll=>{const selected=pollSelections[poll.id]??poll.myOptionIds??[];return <div key={poll.id} className="rounded-xl border border-gray-200 dark:border-zinc-800 p-3 mb-2"><p className="text-sm font-medium mb-2">{poll.question}</p><div className="space-y-1">{poll.options.map((option:any)=><button type="button" key={option.id} disabled={busy || poll.closed} onClick={()=>togglePollOption(poll,option.id)} className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs text-left border ${selected.includes(option.id)?"bg-indigo-50 border-indigo-300 dark:bg-indigo-950/40 dark:border-indigo-700":"bg-gray-50 dark:bg-zinc-800 border-transparent"}`}><span>{option.label}</span><span className="text-gray-500">{option.votes?.length||0} <Check size={12} className="inline"/></span></button>)}</div>{poll.multiple&&<button type="button" disabled={busy||selected.length===0||poll.closed} onClick={()=>submitPollVote(poll)} className="mt-2 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold disabled:opacity-50">Submit selections</button>}</div>})}</section>
             <section><h3 className="font-semibold text-sm mb-2">Events</h3>{features.events.length===0?<p className="text-xs text-gray-500">No upcoming events.</p>:features.events.map(event=><div key={event.id} className="rounded-xl border border-gray-200 dark:border-zinc-800 p-3 mb-2"><p className="text-sm font-medium">{event.title}</p><p className="text-xs text-gray-500">{new Date(event.startsAt).toLocaleString()}</p>{event.description&&<p className="text-xs mt-1">{event.description}</p>}<div className="flex gap-2 mt-2">{(["going","maybe","not-going"] as const).map(response=><button key={response} onClick={()=>act({action:"respondEvent",eventId:event.id,response})} className="rounded-lg border border-gray-200 dark:border-zinc-700 px-2 py-1 text-[11px] capitalize">{response.replace("-"," ")}</button>)}</div></div>)}</section>
             <section><h3 className="font-semibold text-sm mb-2">Announcements</h3>{features.announcements.length===0?<p className="text-xs text-gray-500">No announcements yet.</p>:features.announcements.map(item=><div key={item.id} className="rounded-xl bg-amber-50 dark:bg-amber-950/20 p-3 mb-2"><p className="text-sm">{item.text}</p><p className="text-[10px] text-gray-500 mt-1">{new Date(item.createdAt).toLocaleString()}</p></div>)}</section>
           </div>}
