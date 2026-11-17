@@ -5,7 +5,7 @@ import axios from "axios"
 import toast from "react-hot-toast"
 import { Users, Plus, Loader2 } from "lucide-react"
 
-interface Community { id: string; name: string; description: string; groupIds: string[]; ownerId: string }
+interface Community { id: string; name: string; description: string; groupIds: string[]; ownerId: string; memberIds: string[] }
 interface Props { groups: Group[] }
 const CommunitiesPanel: FC<Props> = ({ groups }) => {
   const [items,setItems] = useState<Community[]>([])
