@@ -9,6 +9,7 @@ on:
     branches:
       - main
       - feat/complete-group-experience
+      - fix/production-readiness-pr8
 
 permissions:
   contents: read
