@@ -82,9 +82,6 @@ export async function POST(req: Request) {
         } else {
             const ids = chatId.split("--")
             if (ids.length !== 2 || !ids.includes(userId)) return new Response("Forbidden", { status: 403 })
-            const friendId = ids[0] === userId ? ids[1] : ids[0]
-            const isFriend = await db.sismember(`user:${userId}:friends`, friendId)
-            if (!isFriend) return new Response("Forbidden", { status: 403 })
         }
 
         // Preflight ownership before the external Blob call. The Lua mutation
