@@ -5,13 +5,15 @@ import Messages from './Messages'
 import ChatInput from './ChatInput'
 import { pusherClient } from '@/lib/pusher'
 import { toPusherKey } from '@/lib/utils'
-import { Search, UserPlus, X, Settings as SettingsIcon, Sparkles } from 'lucide-react'
+import { Search, UserPlus, X, Settings as SettingsIcon, Sparkles, Users } from 'lucide-react'
 import axios from 'axios'
 import { nanoid } from 'nanoid'
 import toast from 'react-hot-toast'
 import AddGroupMembersModal from './AddGroupMembersModal'
 import GroupSettingsModal from './GroupSettingsModal'
 import GroupFeaturesPanel from './GroupFeaturesPanel'
+import GroupMembersManager from './GroupMembersManager'
+import PinnedMessagesBanner from './PinnedMessagesBanner'
 import { useRouter } from 'next/navigation'
 
 interface ChatProps {
@@ -36,6 +38,7 @@ const Chat: FC<ChatProps> = ({
   const [group, setGroup] = useState<Group | undefined>(initialGroup)
   const [isGroupSettingsOpen, setIsGroupSettingsOpen] = useState(false)
   const [isGroupFeaturesOpen, setIsGroupFeaturesOpen] = useState(false)
+  const [isMembersManagerOpen, setIsMembersManagerOpen] = useState(false)
   const groupId = isGroupChat ? chatId.replace('group--', '') : ''
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [isPartnerOnline, setIsPartnerOnline] = useState<boolean>(false)
@@ -247,6 +250,10 @@ const Chat: FC<ChatProps> = ({
           {isGroupChat && group && (
             <button onClick={() => setIsGroupFeaturesOpen(true)} className='p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-gray-300' title='Group activity' aria-label='Group activity'><Sparkles size={18} /></button>
           )}
+          {/* Group member management */}
+          {isGroupChat && group && (
+            <button onClick={() => setIsMembersManagerOpen(true)} className='p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-gray-300' title='Manage members' aria-label='Manage members'><Users size={18} /></button>
+          )}
           {/* Group settings and member controls */}
           {isGroupChat && group && (
             <button onClick={() => setIsGroupSettingsOpen(true)} className='p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-gray-300' title='Group settings' aria-label='Group settings'>
@@ -298,6 +305,8 @@ const Chat: FC<ChatProps> = ({
           )}
         </div>
       </div>
+
+      {isGroupChat && <PinnedMessagesBanner groupId={groupId} />}
 
       <Messages
         initialMessages={initialMessages}

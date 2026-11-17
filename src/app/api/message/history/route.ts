@@ -56,7 +56,7 @@ export async function GET(req: Request) {
             try {
                 const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
                 const validated = messageValidator.parse(parsed)
-                messages.push(validated)
+                if (!validated.expiresAt || validated.expiresAt > Date.now()) messages.push(validated)
             } catch {
                 // skip corrupted message
             }

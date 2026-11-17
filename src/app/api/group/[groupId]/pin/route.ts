@@ -23,7 +23,7 @@ export async function POST(req: Request, { params }: { params: { groupId: string
     const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
     if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
     const isAdmin = (group.adminIds || [group.creatorId]).includes(userId)
-    if (parsed.data.pinned && group.settings?.onlyAdminsCanPinMessages && !isAdmin) return Response.json({ message: "Only admins can pin messages" }, { status: 403 })
+    if (group.settings?.onlyAdminsCanPinMessages && !isAdmin) return Response.json({ message: "Only admins can pin messages" }, { status: 403 })
 
     const key = `chat:group--${groupId}:messages`
     const rows = (await db.zrange(key, 0, -1)) as unknown[]
@@ -45,5 +45,31 @@ export async function POST(req: Request, { params }: { params: { groupId: string
   } catch (error) {
     console.error("Group pin action failed:", error)
     return Response.json({ message: "Unable to update pinned message" }, { status: 500 })
+  }
+}
+
+
+export async function GET(_req: Request, { params }: { params: { groupId: string } }) {
+  try {
+    const session = await getServerSession(authOptions)
+    const userId = session?.user?.id
+    if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
+    const rawGroup = await db.get(`group:${params.groupId}`)
+    if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
+    const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
+    if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
+    const rows = await db.zrange(`chat:group--${params.groupId}:messages`, 0, -1) as unknown[]
+    const messages: Message[] = []
+    for (const row of rows) {
+      try {
+        const item = (typeof row === "string" ? JSON.parse(row) : row) as Message
+        if (item.isPinned && !item.isDeleted && (!item.expiresAt || item.expiresAt > Date.now())) messages.push(item)
+      } catch {}
+    }
+    messages.sort((a,b) => (b.pinnedAt || b.timestamp) - (a.pinnedAt || a.timestamp))
+    return Response.json({ messages: messages.slice(0, 10) })
+  } catch (error) {
+    console.error("Pinned message read failed:", error)
+    return Response.json({ message: "Unable to load pinned messages" }, { status: 500 })
   }
 }
