@@ -1,6 +1,6 @@
 "use client"
 
-import { FC, FormEvent, useEffect, useState } from "react"
+import { FC, FormEvent, useCallback, useEffect, useState } from "react"
 import axios from "axios"
 import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
@@ -22,13 +22,13 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   const [busy, setBusy] = useState(false)
   const [pollSelections, setPollSelections] = useState<Record<string, string[]>>({})
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try { const res = await axios.get(`/api/group/${groupId}/features`); setFeatures(res.data.features) }
     catch { toast.error("Unable to load group features") }
     finally { setLoading(false) }
-  }
-  useEffect(() => { if (isOpen) load() }, [isOpen, groupId])
+  }, [groupId])
+  useEffect(() => { if (isOpen) void load() }, [isOpen, load])
 
   const act = async (payload: any) => {
     if (busy) return
