@@ -59,20 +59,15 @@ export async function POST(req: Request) {
             return new Response('Forbidden', { status: 403 })
         }
 
-        let hidePresencePhoto = false
-        if (isPresence && presenceGroupId) {
-            const rawPreferences = await db.get(`user:${session.user.id}:group-preferences:${presenceGroupId}`)
-            const preferences = (typeof rawPreferences === 'string' ? JSON.parse(rawPreferences) : rawPreferences) || {}
-            hidePresencePhoto = preferences.hideProfilePhoto === true
-        }
-
         const presenceData = isPresence
             ? {
                 user_id: session.user.id,
                 user_info: {
                     name: session.user.name || '',
                     email: session.user.email || '',
-                    image: hidePresencePhoto ? '' : session.user.image || '',
+                    // Group presence is used only for online state in this UI.
+                    // Do not disclose profile images through presence metadata.
+                    image: presenceGroupId ? '' : session.user.image || '',
                 },
             }
             : undefined
