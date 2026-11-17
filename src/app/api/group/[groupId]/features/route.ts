@@ -44,26 +44,30 @@ export async function POST(req: Request, { params }: { params: { groupId: string
     let result: any = null
     const now = Date.now()
 
-    if (action === "createPoll") {
+    if (parsed.data.action === "createPoll") {
       result = { id: nanoid(), question: parsed.data.question, options: parsed.data.options.map(label => ({ id: nanoid(), label, votes: [] })), multiple: parsed.data.multiple, createdBy: userId, createdAt: now, closed: false }
       features.polls = [result, ...(features.polls || [])].slice(0, 100)
-    } else if (action === "votePoll") {
-      const poll = (features.polls || []).find((item: any) => item.id === parsed.data.pollId)
+    } else if (parsed.data.action === "votePoll") {
+      const pollId = parsed.data.pollId
+      const selectedOptionIds = parsed.data.optionIds
+      const poll = (features.polls || []).find((item: any) => item.id === pollId)
       if (!poll || poll.closed) return Response.json({ message: "Poll is unavailable" }, { status: 404 })
-      const optionIds = Array.from(new Set(parsed.data.optionIds))
+      const optionIds = Array.from(new Set(selectedOptionIds))
       if ((!poll.multiple && optionIds.length !== 1) || optionIds.some(id => !poll.options.some((option: any) => option.id === id))) return Response.json({ message: "Invalid poll selection" }, { status: 400 })
       poll.options.forEach((option: any) => { option.votes = (option.votes || []).filter((id: string) => id !== userId) })
       optionIds.forEach(id => { const option = poll.options.find((item: any) => item.id === id); option.votes.push(userId) })
       result = poll
-    } else if (action === "createEvent") {
+    } else if (parsed.data.action === "createEvent") {
       if (parsed.data.startsAt < now - 60000) return Response.json({ message: "Event must be in the future" }, { status: 400 })
       result = { id: nanoid(), ...parsed.data, createdBy: userId, createdAt: now, responses: { going: [], maybe: [], "not-going": [] } }
       features.events = [result, ...(features.events || [])].slice(0, 100)
-    } else if (action === "respondEvent") {
-      const event = (features.events || []).find((item: any) => item.id === parsed.data.eventId)
+    } else if (parsed.data.action === "respondEvent") {
+      const eventId = parsed.data.eventId
+      const response = parsed.data.response
+      const event = (features.events || []).find((item: any) => item.id === eventId)
       if (!event) return Response.json({ message: "Event not found" }, { status: 404 })
       Object.keys(event.responses || {}).forEach(status => { event.responses[status] = event.responses[status].filter((id: string) => id !== userId) })
-      event.responses[parsed.data.response].push(userId)
+      event.responses[response].push(userId)
       result = event
     } else {
       result = { id: nanoid(), text: parsed.data.text, createdBy: userId, createdAt: now }
