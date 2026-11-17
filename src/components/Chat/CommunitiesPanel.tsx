@@ -1,6 +1,6 @@
 "use client"
 
-import { FC, FormEvent, useEffect, useState } from "react"
+import { FC, FormEvent, useCallback, useEffect, useState } from "react"
 import axios from "axios"
 import toast from "react-hot-toast"
 import { Users, Plus, Loader2, Check } from "lucide-react"
@@ -16,15 +16,15 @@ const CommunitiesPanel: FC<Props> = ({ groups }) => {
   const [loading,setLoading] = useState(true)
   const [busy,setBusy] = useState(false)
   const [memberId,setMemberId] = useState("")
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const r = await axios.get("/api/community")
       setItems(r.data.communities || [])
       setInvites(r.data.invites || [])
     } catch { toast.error("Unable to load communities") }
     finally { setLoading(false) }
-  }
-  useEffect(() => { void load() }, [])
+  }, [])
+  useEffect(() => { void load() }, [load])
   const create = async (e: FormEvent) => {
     e.preventDefault()
     if (busy) return
