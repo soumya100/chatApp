@@ -56,9 +56,9 @@ if deleteGroup then
 end
 
 redis.call("SET", KEYS[1], nextGroup)
-for _, memberId in ipairs(removedIds) do
+for index, memberId in ipairs(removedIds) do
   redis.call("SREM", KEYS[2], memberId)
-  redis.call("SREM", "user:" .. memberId .. ":groups", groupId)
+  redis.call("SREM", KEYS[5 + index], groupId)
 end
 if action == "leave" or action == "remove" then
   local message = cjson.decode(systemMessage)
@@ -191,8 +191,10 @@ export async function POST(req: Request, { params }: { params: { groupId: string
                 senderName: "System"
             } : null
 
+            const redisKeys = [groupKey, membersKey, userGroupsKey, messagesKey, featuresKey,
+                ...removedIds.map(id => `user:${id}:groups`)]
             const result = await db.eval(atomicGroupMutation,
-                [groupKey, membersKey, userGroupsKey, messagesKey, featuresKey],
+                redisKeys,
                 [
                     expectedRaw,
                     action,
