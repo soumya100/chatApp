@@ -62,7 +62,7 @@ export async function POST(req: Request, { params }: { params: { communityId: st
       const isMember = (community.memberIds || []).includes(userId)
       const isAdmin = (community.adminIds || [community.ownerId]).includes(userId)
 
-      if (action === "acceptInvite") {
+      if (parsed.data.action === "acceptInvite") {
         const invited = await db.sismember(`community:${params.communityId}:invites`, userId)
         if (!invited) return Response.json({ message: "No pending invitation" }, { status: 404 })
       } else if (!isMember) {
@@ -76,10 +76,10 @@ export async function POST(req: Request, { params }: { params: { communityId: st
       const ops: any[] = []
       let deleteCommunity = false
 
-      if (action === "update") {
+      if (parsed.data.action === "update") {
         if (parsed.data.name !== undefined) next.name = parsed.data.name
         if (parsed.data.description !== undefined) next.description = parsed.data.description
-      } else if (action === "addGroup") {
+      } else if (parsed.data.action === "addGroup") {
         const groupId = parsed.data.groupId
         const groupKey = `group:${groupId}`
         const groupRaw = await db.get(groupKey)
@@ -104,7 +104,7 @@ export async function POST(req: Request, { params }: { params: { communityId: st
         next.memberIds = Array.from(new Set([...next.memberIds, ...(groupMembers || []), group.creatorId]))
         for (const memberId of groupMembers || []) ops.push({ type: "sadd", key: `user:${memberId}:communities`, value: params.communityId })
         ops.push({ type: "casSet", key: groupKey, expected: expectedGroupRaw, value: JSON.stringify({ ...group, communityId: params.communityId, updatedAt: Date.now() }) })
-      } else if (action === "removeGroup") {
+      } else if (parsed.data.action === "removeGroup") {
         const groupId = parsed.data.groupId
         next.groupIds = next.groupIds.filter((id: string) => id !== groupId)
         const groupKey = `group:${groupId}`
@@ -116,25 +116,25 @@ export async function POST(req: Request, { params }: { params: { communityId: st
             ops.push({ type: "casSet", key: groupKey, expected: typeof groupRaw === "string" ? groupRaw : JSON.stringify(groupRaw), value: JSON.stringify({ ...withoutCommunity, updatedAt: Date.now() }) })
           }
         }
-      } else if (action === "inviteMember") {
+      } else if (parsed.data.action === "inviteMember") {
         const targetId = parsed.data.memberId
         const target = await db.get(`user:${targetId}`)
         if (!target) return Response.json({ message: "User not found" }, { status: 404 })
         if (next.memberIds.includes(targetId)) return Response.json({ message: "User is already a member" }, { status: 409 })
         ops.push({ type: "sadd", key: `community:${params.communityId}:invites`, value: targetId })
         ops.push({ type: "sadd", key: `user:${targetId}:community-invites`, value: params.communityId })
-      } else if (action === "acceptInvite") {
+      } else if (parsed.data.action === "acceptInvite") {
         next.memberIds = Array.from(new Set([...next.memberIds, userId]))
         ops.push({ type: "srem", key: `community:${params.communityId}:invites`, value: userId })
         ops.push({ type: "srem", key: `user:${userId}:community-invites`, value: params.communityId })
         ops.push({ type: "sadd", key: `user:${userId}:communities`, value: params.communityId })
-      } else if (action === "removeMember") {
+      } else if (parsed.data.action === "removeMember") {
         const targetId = parsed.data.memberId
         if (targetId === community.ownerId) return Response.json({ message: "Transfer ownership before removing the owner" }, { status: 400 })
         next.memberIds = next.memberIds.filter((id: string) => id !== targetId)
         next.adminIds = next.adminIds.filter((id: string) => id !== targetId)
         ops.push({ type: "srem", key: `user:${targetId}:communities`, value: params.communityId })
-      } else if (action === "leave") {
+      } else if (parsed.data.action === "leave") {
         next.memberIds = next.memberIds.filter((id: string) => id !== userId)
         next.adminIds = next.adminIds.filter((id: string) => id !== userId)
         ops.push({ type: "srem", key: `user:${userId}:communities`, value: params.communityId })
