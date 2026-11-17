@@ -23,9 +23,8 @@ export async function POST(req: Request, { params }: { params: { communityId: st
   if (!raw) return Response.json({ message: "Community not found" }, { status: 404 })
   const community = (typeof raw === "string" ? JSON.parse(raw) : raw) as any
   if (!(community.memberIds || []).includes(userId)) return Response.json({ message: "Not a community member" }, { status: 403 })
-  const action = parsed.data.action
-  if (action !== "leave" && !(community.adminIds || [community.ownerId]).includes(userId)) return Response.json({ message: "Only community admins can manage it" }, { status: 403 })
-  if (action === "leave") {
+  if (parsed.data.action !== "leave" && !(community.adminIds || [community.ownerId]).includes(userId)) return Response.json({ message: "Only community admins can manage it" }, { status: 403 })
+  if (parsed.data.action === "leave") {
     const remaining = (community.memberIds || []).filter((id: string) => id !== userId)
     await db.srem(`user:${userId}:communities`, params.communityId)
     if (remaining.length === 0) {
@@ -48,28 +47,28 @@ export async function POST(req: Request, { params }: { params: { communityId: st
     } else {
       community.adminIds = (community.adminIds || []).filter((id: string) => id !== userId)
     }
-  } else if (action === "update") {
+  } else if (parsed.data.action === "update") {
     if (parsed.data.name !== undefined) community.name = parsed.data.name
     if (parsed.data.description !== undefined) community.description = parsed.data.description
-  } else if (action === "addGroup") {
+  } else if (parsed.data.action === "addGroup") {
     const rawGroup = await db.get(`group:${parsed.data.groupId}`)
     if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
     const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
     if (!(group.adminIds || [group.creatorId]).includes(userId)) return Response.json({ message: "You must administer the group" }, { status: 403 })
     community.groupIds = Array.from(new Set([...(community.groupIds || []), group.id]))
     await db.set(`group:${group.id}`, JSON.stringify({ ...group, communityId: params.communityId, updatedAt: Date.now() }))
-  } else if (action === "addMember") {
+  } else if (parsed.data.action === "addMember") {
     const targetId = parsed.data.memberId
     const rawUser = await db.get(`user:${targetId}`)
     if (!rawUser) return Response.json({ message: "User not found" }, { status: 404 })
     community.memberIds = Array.from(new Set([...(community.memberIds || []), targetId]))
     await db.sadd(`user:${targetId}:communities`, params.communityId)
-  } else if (action === "removeMember") {
+  } else if (parsed.data.action === "removeMember") {
     const targetId = parsed.data.memberId
     if (targetId === community.ownerId) return Response.json({ message: "Transfer ownership before removing the owner" }, { status: 400 })
     community.memberIds = (community.memberIds || []).filter((id: string) => id !== targetId)
     await db.srem(`user:${targetId}:communities`, params.communityId)
-  } else if (action === "removeGroup") {
+  } else if (parsed.data.action === "removeGroup") {
     community.groupIds = (community.groupIds || []).filter((id: string) => id !== parsed.data.groupId)
     const rawGroup = await db.get(`group:${parsed.data.groupId}`)
     if (rawGroup) {
