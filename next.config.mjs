@@ -2,6 +2,7 @@
 const nextConfig = {
   experimental: {
     instrumentationHook: true,
+    serverComponentsExternalPackages: ["@vercel/blob"],
   },
   images: {
     remotePatterns: [
