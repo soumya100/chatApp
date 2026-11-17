@@ -11,6 +11,7 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("removeGroup"), groupId: z.string().min(1) }),
   z.object({ action: z.literal("inviteMember"), memberId: z.string().min(1) }),
   z.object({ action: z.literal("acceptInvite") }),
+  z.object({ action: z.literal("declineInvite") }),
   z.object({ action: z.literal("removeMember"), memberId: z.string().min(1) }),
   z.object({ action: z.literal("leave") })
 ])
@@ -53,7 +54,8 @@ export async function POST(req: Request, { params }: { params: { communityId: st
     const communityKey = `community:${params.communityId}`
 
     // Retry optimistic compare-and-set if another admin changed this community
-    // after our read. Every associated index/group update is in the same Lua call.
+    // after our read. Invitation decline removes both reciprocal indexes in the
+    // same Lua transaction, so the invitation cannot be left half-pending.
     for (let attempt = 0; attempt < 4; attempt++) {
       const raw = await db.get(communityKey)
       if (!raw) return Response.json({ message: "Community not found" }, { status: 404 })
@@ -62,13 +64,13 @@ export async function POST(req: Request, { params }: { params: { communityId: st
       const isMember = (community.memberIds || []).includes(userId)
       const isAdmin = (community.adminIds || [community.ownerId]).includes(userId)
 
-      if (parsed.data.action === "acceptInvite") {
+      if (action === "acceptInvite" || action === "declineInvite") {
         const invited = await db.sismember(`community:${params.communityId}:invites`, userId)
         if (!invited) return Response.json({ message: "No pending invitation" }, { status: 404 })
       } else if (!isMember) {
         return Response.json({ message: "Not a community member" }, { status: 403 })
       }
-      if (action !== "leave" && action !== "acceptInvite" && !isAdmin) {
+      if (action !== "leave" && action !== "acceptInvite" && action !== "declineInvite" && !isAdmin) {
         return Response.json({ message: "Only community admins can manage it" }, { status: 403 })
       }
 
@@ -129,6 +131,10 @@ export async function POST(req: Request, { params }: { params: { communityId: st
         ops.push({ type: "srem", key: `community:${params.communityId}:invites`, value: userId })
         ops.push({ type: "srem", key: `user:${userId}:community-invites`, value: params.communityId })
         ops.push({ type: "sadd", key: `user:${userId}:communities`, value: params.communityId })
+      } else if (parsed.data.action === "declineInvite") {
+        // Idempotent removal from both sides of the invitation index.
+        ops.push({ type: "srem", key: `community:${params.communityId}:invites`, value: userId })
+        ops.push({ type: "srem", key: `user:${userId}:community-invites`, value: params.communityId })
       } else if (parsed.data.action === "removeMember") {
         const targetId = parsed.data.memberId
         if (targetId === community.ownerId) return Response.json({ message: "Transfer ownership before removing the owner" }, { status: 400 })
@@ -178,7 +184,7 @@ export async function POST(req: Request, { params }: { params: { communityId: st
         JSON.stringify(indexedOps)
       ])
       if (Number(result) === 1) {
-        return Response.json({ success: true, deleted: deleteCommunity, community: deleteCommunity ? undefined : next })
+        return Response.json({ success: true, declined: action === "declineInvite", deleted: deleteCommunity, community: deleteCommunity ? undefined : next })
       }
     }
 
