@@ -30,11 +30,11 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   }, [groupId])
   useEffect(() => { if (isOpen) void load() }, [isOpen, load])
 
-  const act = async (payload: any) => {
-    if (busy) return
+  const act = async (payload: any): Promise<boolean> => {
+    if (busy) return false
     setBusy(true)
-    try { await axios.post(`/api/group/${groupId}/features`, payload); await load(); toast.success("Group updated") }
-    catch (error: any) { toast.error(error?.response?.data?.message || "Action failed") }
+    try { await axios.post(`/api/group/${groupId}/features`, payload); await load(); toast.success("Group updated"); return true }
+    catch (error: any) { toast.error(error?.response?.data?.message || "Action failed"); return false }
     finally { setBusy(false) }
   }
 
@@ -53,8 +53,8 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   const submitPollVote = async (poll: any) => {
     const optionIds = pollSelections[poll.id] ?? poll.myOptionIds ?? []
     if (!optionIds.length) return
-    await act({ action: "votePoll", pollId: poll.id, optionIds })
-    setPollSelections(prev => ({ ...prev, [poll.id]: optionIds }))
+    const saved = await act({ action: "votePoll", pollId: poll.id, optionIds })
+    if (saved) setPollSelections(prev => ({ ...prev, [poll.id]: optionIds }))
   }
   const createEvent = async (e: FormEvent) => { e.preventDefault(); if (!eventDate) return; await act({ action: "createEvent", title: eventTitle, description: eventDescription, startsAt: new Date(eventDate).getTime() }); setEventTitle(""); setEventDescription(""); setEventDate("") }
 
