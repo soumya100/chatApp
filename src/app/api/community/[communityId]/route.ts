@@ -69,8 +69,9 @@ export async function POST(req: Request, { params }: { params: { communityId: st
     community.memberIds = (community.memberIds || []).filter((id: string) => id !== targetId)
     await db.srem(`user:${targetId}:communities`, params.communityId)
   } else if (parsed.data.action === "removeGroup") {
-    community.groupIds = (community.groupIds || []).filter((id: string) => id !== parsed.data.groupId)
-    const rawGroup = await db.get(`group:${parsed.data.groupId}`)
+    const groupId = parsed.data.groupId
+    community.groupIds = (community.groupIds || []).filter((id: string) => id !== groupId)
+    const rawGroup = await db.get(`group:${groupId}`)
     if (rawGroup) {
       const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
       if (group.communityId === params.communityId) { delete (group as any).communityId; await db.set(`group:${group.id}`, JSON.stringify(group)) }
