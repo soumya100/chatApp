@@ -71,7 +71,8 @@ function decode<T>(raw: unknown): T {
     return (typeof raw === "string" ? JSON.parse(raw) : raw) as T
 }
 
-export async function POST(req: Request, { params }: { params: { groupId: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ groupId: string }> }) {
+    const { groupId } = await params
     try {
         const session = await getServerSession(authOptions)
         const actorId = session?.user?.id
@@ -82,7 +83,6 @@ export async function POST(req: Request, { params }: { params: { groupId: string
             return Response.json({ message: parsed.error.issues[0]?.message || "Invalid request" }, { status: 400 })
         }
 
-        const groupId = params.groupId
         const action = parsed.data.action
         const groupKey = `group:${groupId}`
         const membersKey = `group:${groupId}:members`
