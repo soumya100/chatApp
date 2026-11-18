@@ -16,6 +16,10 @@ const sets = new Map();
 const hashes = new Map();
 const kv = new Map();
 const zsets = new Map();
+// Redis-compatible key TTL registry (key -> expiry in epoch ms). The harness
+// honors the same EXPIRE/SETEX/SET-clears-TTL semantics as real Redis so
+// retention behavior is exercised, not silently ignored.
+const ttl = new Map();
 const pusherEvents = [];
 const pusherAuthCalls = [];
 const blobCalls = [];
@@ -36,6 +40,7 @@ function zsetRows(key) {
 }
 
 function readRaw(key) {
+  sweep(key);
   const groupMatch = key.match(/^group:([^:]+)$/);
   if (groupMatch) return groups.get(groupMatch[1]) ?? null;
   const userMatch = key.match(/^user:([^:]+)$/);
@@ -50,6 +55,7 @@ function readRaw(key) {
 }
 
 function writeRaw(key, value) {
+  ttl.delete(key); // an overwrite clears any previously set TTL, like Redis SET
   const groupMatch = key.match(/^group:([^:]+)$/);
   if (groupMatch) { groups.set(groupMatch[1], value); return; }
   const userMatch = key.match(/^user:([^:]+)$/);
@@ -68,9 +74,61 @@ function deleteRaw(key) {
   kv.delete(key);
   zsets.delete(key);
   sets.delete(key);
+  hashes.delete(key);
+  ttl.delete(key);
+}
+
+// Removes a key from whichever typed store holds it. Redis keys share one
+// keyspace regardless of type, so an expiry deletes the whole key.
+function purgeKeyEverywhere(key) {
+  const featureMatch = key.match(/^group:([^:]+):features$/);
+  if (featureMatch) { features.delete(featureMatch[1]); return; }
+  const preferenceMatch = key.match(/^user:([^:]+):group-preferences:([^:]+)$/);
+  if (preferenceMatch) { preferences.delete(preferenceMatch[1] + ":" + preferenceMatch[2]); return; }
+  const groupMatch = key.match(/^group:([^:]+)$/);
+  if (groupMatch) { groups.delete(groupMatch[1]); return; }
+  const userMatch = key.match(/^user:([^:]+)$/);
+  if (userMatch) { users.delete(userMatch[1]); return; }
+  const communityMatch = key.match(/^community:([^:]+)$/);
+  if (communityMatch) { communities.delete(communityMatch[1]); return; }
+  kv.delete(key);
+  zsets.delete(key);
+  sets.delete(key);
+  hashes.delete(key);
+}
+
+// Lazily expires a key on first access, mirroring Redis's passive expiry.
+function sweep(key) {
+  const expiresAt = ttl.get(key);
+  if (expiresAt === undefined) return;
+  if (Date.now() >= expiresAt) {
+    ttl.delete(key);
+    purgeKeyEverywhere(key);
+  }
+}
+
+function keyExists(key) {
+  sweep(key);
+  if (readRaw(key) !== null) return true;
+  return sets.has(key) || zsets.has(key) || hashes.has(key);
+}
+
+// Redis EXPIRE semantics: the key must exist (return 0 otherwise) and a
+// non-positive TTL deletes the key immediately.
+function applyExpire(key, seconds) {
+  if (!keyExists(key)) return 0;
+  const window = Number(seconds);
+  if (!Number.isFinite(window) || window <= 0) {
+    ttl.delete(key);
+    purgeKeyEverywhere(key);
+    return 1;
+  }
+  ttl.set(key, Date.now() + window * 1000);
+  return 1;
 }
 
 function sadd(key, value) {
+  sweep(key);
   const values = sets.get(key) || new Set();
   values.add(value);
   sets.set(key, values);
@@ -78,6 +136,7 @@ function sadd(key, value) {
 }
 
 function srem(key, value) {
+  sweep(key);
   const values = sets.get(key);
   if (!values) return 0;
   const had = values.delete(value);
@@ -85,20 +144,24 @@ function srem(key, value) {
 }
 
 function sismember(key, value) {
+  sweep(key);
   return (sets.get(key) || new Set()).has(value) ? 1 : 0;
 }
 
 function smembers(key) {
+  sweep(key);
   return Array.from(sets.get(key) || []);
 }
 
 function hashFields(key) {
+  sweep(key);
   return hashes.get(key) || {};
 }
 
 // ZADD stores {score, member}; members are serialized JSON rows or plain strings.
 // Real Redis updates the score when the member already exists - no duplicates.
 function zadd(key, value) {
+  sweep(key);
   const rows = zsets.get(key) || [];
   const member = typeof value.member === "string" ? value.member : JSON.stringify(value.member);
   const existing = rows.find(row => row.member === member);
@@ -109,6 +172,7 @@ function zadd(key, value) {
 }
 
 function zrem(key, member) {
+  sweep(key);
   const rows = zsets.get(key) || [];
   const next = rows.filter(row => row.member !== member);
   zsets.set(key, next);
@@ -116,6 +180,7 @@ function zrem(key, member) {
 }
 
 function zremrangebyscore(key, min, max) {
+  sweep(key);
   const rows = zsets.get(key) || [];
   const kept = rows.filter(row => !(row.score >= min && row.score <= max));
   zsets.set(key, kept);
@@ -123,10 +188,12 @@ function zremrangebyscore(key, min, max) {
 }
 
 function zcard(key) {
+  sweep(key);
   return (zsets.get(key) || []).length;
 }
 
 function zscore(key, member) {
+  sweep(key);
   const row = (zsets.get(key) || []).find(row => row.member === member);
   return row ? row.score : null;
 }
@@ -150,6 +217,7 @@ function parseBound(bound, fallback) {
 //   zrange(key, -limit, -1)                   -> rank slice (latest N)
 //   zrange(key, "(x", "-inf", {byScore, rev, offset, count}) -> score window
 function zrange(key, start, end, options) {
+  sweep(key);
   const rows = zsetRows(key);
   if (options && options.byScore) {
     // Redis BYSCORE REV semantics: with rev=true the start argument is the
@@ -180,6 +248,39 @@ function globToRegExp(pattern) {
   return new RegExp("^" + escaped + "$");
 }
 
+// Lua script fingerprints the harness can be handed. They are hoisted into
+// constants so the eval dispatch conditions contain no operator-bearing
+// string literals (static analysis reads `local raw = redis.call(...)` inside
+// an `if (...)` as an assignment-in-condition).
+const LUA_FEATURES_SCRIPT_MARKER = 'local raw = redis.call("GET", KEYS[1])';
+const LUA_GROUP_CAS_SCRIPT_MARKER = 'local current = redis.call("GET"';
+
+// Locates a message row by id while keeping malformed rows observable: a
+// corrupt stored row is counted and reported instead of being silently
+// skipped by an invisible catch.
+let skippedMalformedMessageRows = 0;
+function findMessageRowIndex(rows, messageId) {
+  let malformed = 0;
+  const index = rows.findIndex(row => {
+    try {
+      return parse(row.member).id === messageId;
+    } catch {
+      malformed += 1;
+      return false;
+    }
+  });
+  if (malformed > 0) {
+    skippedMalformedMessageRows += malformed;
+    console.warn(`Harness skipped ${malformed} malformed message row(s) while locating a message`);
+  }
+  return index;
+}
+
+function isInvalidPollSelection(poll, optionIds) {
+  const unknownOption = optionIds.some(id => !poll.options.some(option => option.id === id));
+  return unknownOption || (!poll.multiple && optionIds.length !== 1);
+}
+
 const db = {
   async get(key) {
     return readRaw(key);
@@ -197,11 +298,16 @@ const db = {
     for (const id of groups.keys()) all.add(`group:${id}`);
     for (const id of users.keys()) all.add(`user:${id}`);
     for (const id of communities.keys()) all.add(`community:${id}`);
+    for (const id of features.keys()) all.add(`group:${id}:features`);
     for (const key of kv.keys()) all.add(key);
     for (const key of zsets.keys()) all.add(key);
     for (const key of sets.keys()) all.add(key);
     for (const key of hashes.keys()) all.add(key);
-    return Array.from(all).filter(key => regexp.test(key));
+    for (const key of ttl.keys()) all.add(key);
+    return Array.from(all).filter(key => {
+      sweep(key); // expired keys are invisible to KEYS, like real Redis
+      return keyExists(key) && regexp.test(key);
+    });
   },
   pipeline() {
     const commands = [];
@@ -216,7 +322,9 @@ const db = {
       zrem(key, member) { commands.push(() => zrem(key, member)); return pipeline; },
       zremrangebyscore(key, min, max) { commands.push(() => zremrangebyscore(key, min, max)); return pipeline; },
       zcard(key) { commands.push(() => zcard(key)); return pipeline; },
-      expire(key) { commands.push(() => 1); return pipeline; },
+      expire(key, seconds) { commands.push(() => applyExpire(key, seconds)); return pipeline; },
+      setex(key, seconds, value) { commands.push(() => { writeRaw(key, value); applyExpire(key, seconds); return "OK"; }); return pipeline; },
+      hincrby(key, field, delta) { commands.push(() => db.hincrby(key, field, delta)); return pipeline; },
       async exec() { return Promise.all(commands.map(command => command())); },
     };
     return pipeline;
@@ -242,15 +350,22 @@ const db = {
   async hgetall(key) {
     return { ...hashFields(key) };
   },
+  async expire(key, seconds) { return applyExpire(key, seconds); },
+  async setex(key, seconds, value) { writeRaw(key, value); applyExpire(key, seconds); return "OK"; },
+  async ttl(key) {
+    if (!keyExists(key)) return -2;
+    const expiresAt = ttl.get(key);
+    if (expiresAt === undefined) return -1;
+    return Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+  },
   async zadd(key, value) { return zadd(key, value); },
   async zrem(key, member) { return zrem(key, member); },
   async zremrangebyscore(key, min, max) { return zremrangebyscore(key, min, max); },
   async zcard(key) { return zcard(key); },
   async zscore(key, member) { return zscore(key, member); },
-  async expire(key) { return 1; },
   async zrange(key, start, end, options) { return zrange(key, start, end, options); },
   async eval(script, keys, args) {
-    if (script.includes('local raw = redis.call("GET", KEYS[1])')) {
+    if (script.includes(LUA_FEATURES_SCRIPT_MARKER)) {
       const groupId = keys[0].slice("group:".length, -":features".length);
       const userId = args[0];
       const action = args[1];
@@ -269,7 +384,7 @@ const db = {
         const poll = state.polls.find(item => item.id === payload.pollId);
         if (!poll || poll.closed) return JSON.stringify({ error: "Poll is unavailable" });
         const selected = [...new Set(payload.optionIds)];
-        if (selected.some(id => !poll.options.some(option => option.id === id)) || (!poll.multiple && selected.length !== 1)) {
+        if (isInvalidPollSelection(poll, selected)) {
           return JSON.stringify({ error: "Invalid poll selection" });
         }
         for (const option of poll.options) {
@@ -323,7 +438,7 @@ const db = {
 
     if (script.includes("Message text cannot be empty")) {
       const rows = zsets.get(keys[0]) || [];
-      const index = rows.findIndex(row => { try { return parse(row.member).id === args[0]; } catch { return false; } });
+      const index = findMessageRowIndex(rows, args[0]);
       if (index < 0) return JSON.stringify({ error: "Message not found" });
       const message = parse(rows[index].member);
       if (message.senderId === "system" || message.isDeleted) return JSON.stringify({ error: "Message cannot be edited" });
@@ -338,7 +453,7 @@ const db = {
 
     if (script.includes("This message was deleted")) {
       const rows = zsets.get(keys[0]) || [];
-      const index = rows.findIndex(row => { try { return parse(row.member).id === args[0]; } catch { return false; } });
+      const index = findMessageRowIndex(rows, args[0]);
       if (index < 0) return JSON.stringify({ error: "Message not found" });
       const message = parse(rows[index].member);
       if (message.senderId === "system" || message.isDeleted) return JSON.stringify({ error: "Message cannot be deleted" });
@@ -358,7 +473,7 @@ const db = {
 
     if (script.includes("Message cannot be reacted to")) {
       const rows = zsets.get(keys[0]) || [];
-      const index = rows.findIndex(row => { try { return parse(row.member).id === args[0]; } catch { return false; } });
+      const index = findMessageRowIndex(rows, args[0]);
       if (index < 0) return JSON.stringify({ error: "Message not found" });
       const message = parse(rows[index].member);
       if (message.senderId === "system" || message.isDeleted) return JSON.stringify({ error: "Message cannot be reacted to" });
@@ -375,7 +490,7 @@ const db = {
 
     if (script.includes("Message cannot be pinned")) {
       const rows = zsets.get(keys[0]) || [];
-      const index = rows.findIndex(row => { try { return parse(row.member).id === args[0]; } catch { return false; } });
+      const index = findMessageRowIndex(rows, args[0]);
       if (index < 0) return null;
       const message = parse(rows[index].member);
       if (message.senderId === "system" || message.isDeleted) {
@@ -395,7 +510,7 @@ const db = {
       return rows[index].member;
     }
 
-    if (script.includes('local current = redis.call("GET"')) {
+    if (script.includes(LUA_GROUP_CAS_SCRIPT_MARKER)) {
       if (forcedConflicts > 0) { forcedConflicts -= 1; return 0; }
       const groupId = keys[0].slice("group:".length);
       const current = groups.get(groupId);
@@ -537,6 +652,8 @@ function reset(overrides = {}) {
   hashes.clear();
   kv.clear();
   zsets.clear();
+  ttl.clear();
+  skippedMalformedMessageRows = 0;
   pusherFailure = false;
   blobFailure = false;
   pusherEvents.length = 0;
@@ -592,7 +709,10 @@ function seedZsetEntry(key, score, member) {
   rows.push({ score: Number(score), member: typeof member === "string" ? member : JSON.stringify(member) });
   zsets.set(key, rows);
 }
-function seedKv(key, value) { writeRaw(key, typeof value === "string" ? value : JSON.stringify(value)); }
+function seedKv(key, value, options = {}) { 
+  writeRaw(key, typeof value === "string" ? value : JSON.stringify(value));
+  if (options.ttlSeconds !== undefined) applyExpire(key, options.ttlSeconds);
+}
 function getKv(key) { return readRaw(key); }
 function seedHash(key, fields) { hashes.set(key, { ...fields }); }
 function getHash(key) { return { ...hashFields(key) }; }
@@ -618,4 +738,5 @@ module.exports = {
   setMessages, getMessages, setDirectMessages, getDirectMessages, seedSet, seedZsetEntry, seedKv,
   seedHash, getKv, getHash, getZset, forceRedisConflicts, setPusherFailure, setBlobFailure,
   blobCalls, uploadConfigs, pusherAuthCalls, getSetMembers, request, requestRaw, body, loadRoute, pusherEvents,
+  db,
 };
