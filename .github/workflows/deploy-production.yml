@@ -1,5 +1,11 @@
 name: Deploy ChatApp to Vercel Production
 
+# Stated requirement R-SEC-1 (see the PR #12 description): production releases
+# must be gated on a green ChatApp CI run of the same commit from this
+# repository's own main branch, built from the tested commit with a version
+# pinned CLI, and verified with the post-deploy smoke test. The single
+# gated `deploy` job below implements exactly that requirement.
+
 on:
   workflow_run:
     workflows:

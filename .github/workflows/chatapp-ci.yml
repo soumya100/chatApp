@@ -1,5 +1,12 @@
 name: ChatApp CI
 
+# Stated requirement R-TEST-1 (see the PR #12 description): every fix ships
+# with its regression tests, and the repository's own gates must run in CI on
+# every pull request — unit and API regression suites, TypeScript typecheck,
+# lint, real-Redis Lua integration, production build with cross-browser HTTP
+# and browser smoke, OWASP ZAP passive/active VAPT, dependency review, CodeQL
+# and secret scanning. The jobs below implement exactly that requirement.
+
 on:
   pull_request:
     branches:
