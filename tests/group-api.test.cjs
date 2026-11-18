@@ -437,7 +437,9 @@ test("member invitations enforce admin policy and update both membership indexes
   h.setSession("owner");
   const adminApproved = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user"] })));
   assert.equal(adminApproved.status, 200);
-  h.setGroup({ ...h.getGroup(), settings: {} });
+
+  h.reset();
+  h.setUser("new-user", { name: "New User", image: "/new-user.png" });
   const result = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user", "new-user", "member", "missing"] })));
   assert.equal(result.status, 200);
   assert.equal(result.data.addedCount, 1);
