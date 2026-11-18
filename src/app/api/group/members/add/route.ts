@@ -18,7 +18,13 @@ export async function POST(req: Request) {
         const session = await getServerSession(authOptions)
         if (!session?.user?.id) return Response.json({ message: "Unauthorized" }, { status: 401 })
 
-        const parsed = addMembersSchema.safeParse(await req.json())
+        let body: unknown
+        try {
+            body = await req.json()
+        } catch {
+            return Response.json({ message: "Request body must be valid JSON" }, { status: 400 })
+        }
+        const parsed = addMembersSchema.safeParse(body)
         if (!parsed.success) {
             return Response.json({ message: parsed.error.issues[0]?.message || "Invalid payload" }, { status: 400 })
         }
@@ -28,15 +34,16 @@ export async function POST(req: Request) {
         if (!groupRaw) return Response.json({ message: "Group not found" }, { status: 404 })
 
         const group = (typeof groupRaw === "string" ? JSON.parse(groupRaw) : groupRaw) as Group
-        const isMember = group.memberIds?.includes(session.user.id)
+        const existingMemberIds = group.memberIds || []
+        const isMember = existingMemberIds.includes(session.user.id)
         if (!isMember) return Response.json({ message: "You are not a member of this group" }, { status: 403 })
 
-        const isAdmin = (group.adminIds || [group.creatorId]).includes(session.user.id)
+        const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(session.user.id)
         if (group.settings?.onlyAdminsCanAddMembers && !isAdmin) {
             return Response.json({ message: "Only group admins can add members" }, { status: 403 })
         }
 
-        const uniqueIds = Array.from(new Set(memberIds)).filter(id => !group.memberIds.includes(id))
+        const uniqueIds = Array.from(new Set(memberIds)).filter(id => !existingMemberIds.includes(id))
         if (uniqueIds.length === 0) {
             return Response.json({ message: "Selected users are already group members" }, { status: 409 })
         }
@@ -58,7 +65,7 @@ export async function POST(req: Request) {
 
         const updatedGroup: Group = {
             ...group,
-            memberIds: [...group.memberIds, ...validMemberIds],
+            memberIds: [...existingMemberIds, ...validMemberIds],
             updatedAt: Date.now()
         }
         const actorName = session.user.name || "A member"
@@ -93,7 +100,7 @@ export async function POST(req: Request) {
         })
         await pipeline.exec()
 
-        await Promise.all([
+        await Promise.allSettled([
             ...validMemberIds.map(id => pusherServer.trigger(
                 toPusherKey(`private-user:${id}:groups`), "new_group", updatedGroup
             )),
