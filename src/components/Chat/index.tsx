@@ -120,19 +120,25 @@ const Chat: FC<ChatProps> = ({
       }
     }
 
-    const groupMembersUpdatedHandler = ({
-      group: updatedGroup,
-    }: {
-      group: Group
-      addedMemberIds: string[]
-    }) => {
-      if (updatedGroup?.memberIds) {
-        setExistingMemberIds(updatedGroup.memberIds)
-        setMemberCount(updatedGroup.memberIds.length)
-      }
+    const applyGroupUpdate = (updatedGroup?: Group) => {
+      if (!updatedGroup?.memberIds) return
+      setGroup(updatedGroup)
+      setExistingMemberIds(updatedGroup.memberIds)
+      setMemberCount(updatedGroup.memberIds.length)
+    }
+
+    const groupUpdatedHandler = (updatedGroup: Group) => applyGroupUpdate(updatedGroup)
+    const groupMembersUpdatedHandler = (payload: { group?: Group; updatedGroup?: Group }) => {
+      applyGroupUpdate(payload.group || payload.updatedGroup)
+    }
+    const groupDeletedHandler = () => {
+      toast.error("This group is no longer available")
+      router.push("/dashboard/chats")
     }
 
     privateChannel.bind('user_typing', typingHandler)
+    privateChannel.bind('group_updated', groupUpdatedHandler)
+    privateChannel.bind('group_deleted', groupDeletedHandler)
     privateChannel.bind('group_members_updated', groupMembersUpdatedHandler)
     userGroupsChannel?.bind('group_removed', groupRemovedHandler)
 
@@ -140,6 +146,8 @@ const Chat: FC<ChatProps> = ({
       pusherClient.unsubscribe(presenceChannelKey)
       pusherClient.unsubscribe(privateChannelKey)
       privateChannel.unbind('user_typing', typingHandler)
+      privateChannel.unbind('group_updated', groupUpdatedHandler)
+      privateChannel.unbind('group_deleted', groupDeletedHandler)
       privateChannel.unbind('group_members_updated', groupMembersUpdatedHandler)
       userGroupsChannel?.unbind('group_removed', groupRemovedHandler)
       if (userGroupsChannelKey) pusherClient.unsubscribe(userGroupsChannelKey)
@@ -365,6 +373,29 @@ const Chat: FC<ChatProps> = ({
         />
       )}
 
+      {isGroupChat && group && (
+        <GroupMembersManager
+          isOpen={isMembersManagerOpen}
+          onClose={() => setIsMembersManagerOpen(false)}
+          group={group}
+          sessionId={sessionId}
+          onGroupUpdated={(updated) => {
+            setGroup(updated)
+            setExistingMemberIds(updated.memberIds)
+            setMemberCount(updated.memberIds.length)
+          }}
+        />
+      )}
+
+      {isGroupChat && group && (
+        <GroupFeaturesPanel
+          isOpen={isGroupFeaturesOpen}
+          onClose={() => setIsGroupFeaturesOpen(false)}
+          groupId={groupId}
+          isAdmin={(group.adminIds || [group.creatorId]).includes(sessionId)}
+        />
+      )}
+
       {/* Add Members to Group Modal */}
       {isGroupChat && (
         <AddGroupMembersModal
@@ -375,6 +406,7 @@ const Chat: FC<ChatProps> = ({
           existingMemberIds={existingMemberIds}
           onMembersAdded={(newMemberIds, updatedGroup) => {
             if (updatedGroup?.memberIds) {
+              setGroup(updatedGroup)
               setExistingMemberIds(updatedGroup.memberIds)
               setMemberCount(updatedGroup.memberIds.length)
             } else {
