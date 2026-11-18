@@ -37,7 +37,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
     return Response.json({
       members,
       creatorId: group.creatorId,
-      adminIds: group.adminIds || [group.creatorId],
+      adminIds: group.adminIds?.length ? group.adminIds : [group.creatorId],
       memberCount: members.length
     })
   } catch (error) {
