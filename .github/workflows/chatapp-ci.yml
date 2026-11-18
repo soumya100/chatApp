@@ -209,11 +209,11 @@ jobs:
         id: zap
         continue-on-error: true
         run: |
-          docker run --rm --network host \
+          docker run --rm --network host --user root \
             --workdir /zap/wrk \
             -v "${{ github.workspace }}:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://127.0.0.1:3100 -m 3 -J /zap/wrk/zap-report.json -I
+            zap-baseline.py -t http://127.0.0.1:3100 -m 3 -J zap-report.json -I
 
       - name: Validate ZAP report and block High/Critical findings
         if: always()
