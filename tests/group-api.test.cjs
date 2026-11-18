@@ -46,6 +46,27 @@ test("group member listing: missing/corrupt user records fall back safely", asyn
   assert.deepEqual(result.data.members[1], { id: "missing", name: "Group member", image: "" });
 });
 
+test("group member listing: members who hide their profile photo never expose it", async () => {
+  h.reset({ group: { memberIds: ["owner", "member"] } });
+  h.seedKv("user:member:group-preferences:g1", { notifications: "all", showReadReceipts: true, hideProfilePhoto: true });
+  const result = await read(await get(members));
+  assert.equal(result.status, 200);
+  const byId = Object.fromEntries(result.data.members.map(member => [member.id, member]));
+  assert.equal(byId.member.image, "", "hideProfilePhoto members must not leak their photo");
+  assert.equal(byId.member.name, "Member", "name stays visible; only the photo is private");
+  assert.equal(byId.owner.image, "/owner.png", "other members keep their photos");
+});
+
+test("group member listing: unreadable preference records do not break the directory", async () => {
+  h.reset({ group: { memberIds: ["owner", "member"] } });
+  h.seedKv("user:member:group-preferences:g1", "corrupt-not-json{{{");
+  const result = await read(await get(members));
+  assert.equal(result.status, 200);
+  const byId = Object.fromEntries(result.data.members.map(member => [member.id, member]));
+  assert.equal(byId.member.name, "Member");
+  assert.equal(byId.member.image, "/member.png");
+});
+
 test("group management: unauthenticated and malformed requests fail closed", async () => {
   h.reset({ session: null });
   assert.equal((await read(await post(manage, { action: "leave" }))).status, 401);

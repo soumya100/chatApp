@@ -22,16 +22,31 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
     const memberIds = Array.from(new Set(group.memberIds || []))
     const pipeline = db.pipeline()
     memberIds.forEach(id => pipeline.get(`user:${id}`))
-    const rawUsers = await pipeline.exec()
+    const preferencesPipeline = db.pipeline()
+    memberIds.forEach(id => preferencesPipeline.get(`user:${id}:group-preferences:${groupId}`))
+    const [rawUsers, rawPreferences] = await Promise.all([pipeline.exec(), preferencesPipeline.exec()])
+
+    // Mirror the server-side privacy rule used by message broadcast/history:
+    // a member who sets hideProfilePhoto in this group never exposes their photo.
+    const hiddenPhotoIds = new Set<string>()
+    rawPreferences.forEach((raw, index) => {
+      try {
+        const preferences = typeof raw === "string" ? JSON.parse(raw) : raw
+        if (preferences?.hideProfilePhoto) hiddenPhotoIds.add(memberIds[index])
+      } catch (error) {
+        console.error(`Failed to load group preferences for member ${memberIds[index]} in group ${groupId}:`, error)
+      }
+    })
 
     const members = memberIds.map((id, index) => {
+      let user: User | null = null
       try {
         const raw = rawUsers[index]
-        const user = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) as User : null
-        return { id, name: user?.name || "Group member", image: user?.image || "" }
-      } catch {
-        return { id, name: "Group member", image: "" }
+        user = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) as User : null
+      } catch (error) {
+        console.error(`Failed to load profile for group member ${id} in group ${groupId}:`, error)
       }
+      return { id, name: user?.name || "Group member", image: hiddenPhotoIds.has(id) ? "" : user?.image || "" }
     })
 
     return Response.json({
