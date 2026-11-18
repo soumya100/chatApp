@@ -51,8 +51,6 @@ elseif action == "votePoll" then
   for _, option in ipairs(poll.options or {}) do
     option.votes = option.votes or cjson.decode("[]")
     for i = #option.votes, 1, -1 do if option.votes[i] == userId then table.remove(option.votes, i) end end
-    -- Lua cjson serializes an emptied plain table as an object; preserve the API's array shape.
-    if #option.votes == 0 then option.votes = cjson.decode("[]") end
   end
   for _, option in ipairs(poll.options or {}) do
     if selected[option.id] then table.insert(option.votes, userId) end
@@ -81,8 +79,23 @@ else
   return cjson.encode({error = "Unsupported action"})
 end
 
-redis.call("SET", KEYS[1], cjson.encode(features))
-return cjson.encode({features = features, result = result})
+-- Redis' bundled cjson maps an empty Lua table to {}. Normalize the
+-- list-valued fields explicitly so empty lists keep their JSON array contract.
+local function normalizeFeatureArrays(encoded)
+  encoded = string.gsub(encoded, '"polls":{}', '"polls":[]')
+  encoded = string.gsub(encoded, '"events":{}', '"events":[]')
+  encoded = string.gsub(encoded, '"announcements":{}', '"announcements":[]')
+  encoded = string.gsub(encoded, '"votes":{}', '"votes":[]')
+  encoded = string.gsub(encoded, '"going":{}', '"going":[]')
+  encoded = string.gsub(encoded, '"maybe":{}', '"maybe":[]')
+  encoded = string.gsub(encoded, '"not%-going":{}', '"not-going":[]')
+  return encoded
+end
+
+local encodedFeatures = normalizeFeatureArrays(cjson.encode(features))
+local encodedResult = normalizeFeatureArrays(cjson.encode(result))
+redis.call("SET", KEYS[1], encodedFeatures)
+return '{"features":' .. encodedFeatures .. ',"result":' .. encodedResult .. '}'
 `
 
 export async function POST(req: Request, { params }: { params: Promise<{ groupId: string }> }) {
