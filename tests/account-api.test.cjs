@@ -197,7 +197,21 @@ test("upload: issues client tokens only for authenticated sessions with a bounde
   assert.equal(ok.status, 200);
   const config = h.uploadConfigs[0];
   assert.equal(config.maximumSizeInBytes, 30 * 1024 * 1024);
-  assert.ok(config.allowedContentTypes.includes("image/*"));
-  assert.ok(!config.allowedContentTypes.includes("text/html"), "HTML uploads must never be allowed");
+  for (const rasterType of ["image/png", "image/jpeg", "image/gif", "image/webp"]) {
+    assert.ok(config.allowedContentTypes.includes(rasterType), `safe raster type ${rasterType} must be allowed`);
+  }
+  // A wildcard image entry would also admit image/svg+xml, and SVG served
+  // inline executes script (stored XSS). Browser-active documents must never
+  // appear in the allow-list.
+  for (const forbidden of ["image/*", "image/svg+xml", "text/html", "application/xhtml+xml"]) {
+    assert.ok(!config.allowedContentTypes.includes(forbidden), `${forbidden} must never be allowed`);
+  }
+  const svgPayload = { type: "blob.generate-client-token", payload: { pathname: "a.svg", callbackUrl: "http://localhost/api/upload", contentType: "image/svg+xml" } };
+  const svgRejected = await status(await upload.POST(h.request(svgPayload)));
+  assert.equal(svgRejected.status, 400, "an SVG upload must be rejected before a token is generated");
+  const htmlPayload = { type: "blob.generate-client-token", payload: { pathname: "a.html", callbackUrl: "http://localhost/api/upload", contentType: "text/html" } };
+  const htmlRejected = await status(await upload.POST(h.request(htmlPayload)));
+  assert.equal(htmlRejected.status, 400, "an HTML upload must be rejected before a token is generated");
+  assert.equal(h.uploadConfigs.length, 1, "no token config may be recorded for rejected uploads");
   assert.equal(JSON.parse(config.tokenPayload).userId, "owner", "the token is bound to the uploader");
 });

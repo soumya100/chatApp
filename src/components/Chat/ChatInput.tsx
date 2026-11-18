@@ -390,7 +390,7 @@ const ChatInput: FC<ChatInputProps> = ({
               ref={fileInputRef}
               onChange={handleFileSelect}
               className='hidden'
-              accept='image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip'
+              accept='image/png,image/jpeg,image/gif,image/webp,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip'
               aria-label='Upload attachment'
             />
 

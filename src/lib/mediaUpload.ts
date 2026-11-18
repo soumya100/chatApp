@@ -29,7 +29,9 @@ export async function uploadMedia(file: File): Promise<UploadedMediaResponse> {
     'application/x-zip-compressed',
     'application/octet-stream',
   ])
-  const isSupportedMedia = /^(image|video|audio)\//.test(mimeType)
+  // Exact raster image types only: a bare image/ prefix would admit
+  // image/svg+xml, which executes script when the blob URL is opened inline.
+  const isSupportedMedia = /^(image\/(png|jpeg|gif|webp)|video\/|audio\/)/.test(mimeType)
   const isSupportedDocument =
     allowedDocumentExtensions.has(extension) &&
     (!mimeType || allowedDocumentMimeTypes.has(mimeType))
