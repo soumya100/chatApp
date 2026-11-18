@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
         const parsed = addMembersSchema.safeParse(await req.json())
         if (!parsed.success) {
-            return Response.json({ message: parsed.error.errors[0]?.message || "Invalid payload" }, { status: 400 })
+            return Response.json({ message: parsed.error.issues[0]?.message || "Invalid payload" }, { status: 400 })
         }
 
         const { groupId, memberIds } = parsed.data
@@ -44,16 +44,21 @@ export async function POST(req: Request) {
         const usersPipeline = db.pipeline()
         uniqueIds.forEach(id => usersPipeline.get(`user:${id}`))
         const rawUsers = await usersPipeline.exec()
-        const addedNames = rawUsers.flatMap(raw => {
+        const validMembers = uniqueIds.flatMap((id, index) => {
+            const raw = rawUsers[index]
+            if (!raw) return []
             try {
                 const user = (typeof raw === "string" ? JSON.parse(raw) : raw) as User
-                return user?.name ? [user.name] : []
+                return user?.id ? [{ id, name: user.name || "Member" }] : []
             } catch { return [] }
         })
+        const validMemberIds = validMembers.map(member => member.id)
+        if (!validMemberIds.length) return Response.json({ message: "No valid users were selected" }, { status: 404 })
+        const addedNames = validMembers.map(member => member.name)
 
         const updatedGroup: Group = {
             ...group,
-            memberIds: [...group.memberIds, ...uniqueIds],
+            memberIds: [...group.memberIds, ...validMemberIds],
             updatedAt: Date.now()
         }
         const actorName = session.user.name || "A member"
@@ -67,10 +72,20 @@ export async function POST(req: Request) {
         }
 
         const pipeline = db.pipeline()
-        uniqueIds.forEach(id => {
+        validMemberIds.forEach(id => {
             pipeline.sadd(`group:${groupId}:members`, id)
             pipeline.sadd(`user:${id}:groups`, groupId)
         })
+        if (group.communityId) {
+            const rawCommunity = await db.get(`community:${group.communityId}`)
+            if (rawCommunity) {
+                const community = (typeof rawCommunity === "string" ? JSON.parse(rawCommunity) : rawCommunity) as any
+                community.memberIds = Array.from(new Set([...(community.memberIds || []), ...validMemberIds]))
+                community.updatedAt = Date.now()
+                pipeline.set(`community:${group.communityId}`, JSON.stringify(community))
+                validMemberIds.forEach(id => pipeline.sadd(`user:${id}:communities`, group.communityId!))
+            }
+        }
         pipeline.set(`group:${groupId}`, JSON.stringify(updatedGroup))
         pipeline.zadd(`chat:group--${groupId}:messages`, {
             score: systemMessage.timestamp,
@@ -79,16 +94,16 @@ export async function POST(req: Request) {
         await pipeline.exec()
 
         await Promise.all([
-            ...uniqueIds.map(id => pusherServer.trigger(
+            ...validMemberIds.map(id => pusherServer.trigger(
                 toPusherKey(`private-user:${id}:groups`), "new_group", updatedGroup
             )),
             pusherServer.trigger(toPusherKey(`private-chat:group--${groupId}`), "group_members_updated", {
-                group: updatedGroup, addedMemberIds: uniqueIds
+                group: updatedGroup, addedMemberIds: validMemberIds
             }),
             pusherServer.trigger(toPusherKey(`private-chat:group--${groupId}`), "incoming-message", systemMessage)
         ])
 
-        return Response.json({ success: true, group: updatedGroup, addedCount: uniqueIds.length })
+        return Response.json({ success: true, group: updatedGroup, addedCount: validMemberIds.length })
     } catch (error) {
         console.error("Failed to add members to group:", error)
         return Response.json({ message: "Failed to add members to group" }, { status: 500 })

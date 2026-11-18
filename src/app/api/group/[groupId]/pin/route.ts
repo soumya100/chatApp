@@ -1,0 +1,93 @@
+import { authOptions } from "@/lib/auth"
+import { db } from "@/lib/db"
+import { pusherServer } from "@/lib/pusher"
+import { toPusherKey } from "@/lib/utils"
+import { getServerSession } from "next-auth"
+import { z } from "zod"
+
+export const dynamic = "force-dynamic"
+
+const schema = z.object({ messageId: z.string().min(1), pinned: z.boolean() })
+
+// Locate and replace the sorted-set member in one Redis operation. This keeps
+// a concurrent edit/reaction/delete from being overwritten by a stale pin copy.
+const atomicPinUpdate = `
+local rows = redis.call("ZRANGE", KEYS[1], 0, -1)
+for _, raw in ipairs(rows) do
+  local ok, message = pcall(cjson.decode, raw)
+  if ok and message.id == ARGV[1] then
+    if message.senderId == "system" or message.isDeleted then return cjson.encode({error = "Message cannot be pinned"}) end
+    local shouldPin = ARGV[2] == "true"
+    if (message.isPinned == true) == shouldPin then return raw end
+    message.isPinned = shouldPin
+    if shouldPin then
+      message.pinnedAt = tonumber(ARGV[3])
+      message.pinnedBy = ARGV[4]
+    else
+      message.pinnedAt = nil
+      message.pinnedBy = nil
+    end
+    local updated = cjson.encode(message)
+    redis.call("ZREM", KEYS[1], raw)
+    redis.call("ZADD", KEYS[1], tonumber(message.timestamp), updated)
+    return updated
+  end
+end
+return nil
+`
+
+export async function POST(req: Request, { params }: { params: Promise<{ groupId: string }> }) {
+  const { groupId } = await params
+  try {
+    const session = await getServerSession(authOptions)
+    const userId = session?.user?.id
+    if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
+    const parsed = schema.safeParse(await req.json())
+    if (!parsed.success) return Response.json({ message: "Invalid pin request" }, { status: 400 })
+
+    const rawGroup = await db.get(`group:${groupId}`)
+    if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
+    const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
+    if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
+    const isAdmin = (group.adminIds || [group.creatorId]).includes(userId)
+    if (group.settings?.onlyAdminsCanPinMessages && !isAdmin) return Response.json({ message: "Only admins can pin messages" }, { status: 403 })
+
+    const key = `chat:group--${groupId}:messages`
+    const rawUpdated = await db.eval(atomicPinUpdate, [key], [parsed.data.messageId, String(parsed.data.pinned), String(Date.now()), userId])
+    if (!rawUpdated) return Response.json({ message: "Message cannot be pinned" }, { status: 404 })
+    const updated = typeof rawUpdated === "string" ? JSON.parse(rawUpdated) : rawUpdated as any
+    if (updated?.error) return Response.json({ message: updated.error }, { status: 404 })
+
+    await Promise.allSettled([pusherServer.trigger(toPusherKey(`private-chat:group--${groupId}`), "message_pin_updated", updated)])
+    return Response.json({ success: true, message: updated })
+  } catch (error) {
+    console.error("Group pin action failed:", error)
+    return Response.json({ message: "Unable to update pinned message" }, { status: 500 })
+  }
+}
+
+export async function GET(_req: Request, { params }: { params: Promise<{ groupId: string }> }) {
+  const { groupId } = await params
+  try {
+    const session = await getServerSession(authOptions)
+    const userId = session?.user?.id
+    if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
+    const rawGroup = await db.get(`group:${groupId}`)
+    if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
+    const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
+    if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
+    const rows = await db.zrange(`chat:group--${groupId}:messages`, 0, -1) as unknown[]
+    const messages: Message[] = []
+    for (const row of rows) {
+      try {
+        const item = (typeof row === "string" ? JSON.parse(row) : row) as Message
+        if (item.isPinned && !item.isDeleted && (!item.expiresAt || item.expiresAt > Date.now())) messages.push(item)
+      } catch {}
+    }
+    messages.sort((a,b) => (b.pinnedAt || b.timestamp) - (a.pinnedAt || a.timestamp))
+    return Response.json({ messages: messages.slice(0, 10) })
+  } catch (error) {
+    console.error("Pinned message read failed:", error)
+    return Response.json({ message: "Unable to load pinned messages" }, { status: 500 })
+  }
+}

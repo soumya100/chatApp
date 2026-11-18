@@ -5,11 +5,16 @@ import Messages from './Messages'
 import ChatInput from './ChatInput'
 import { pusherClient } from '@/lib/pusher'
 import { toPusherKey } from '@/lib/utils'
-import { Search, UserPlus, X } from 'lucide-react'
+import { Search, UserPlus, X, Settings as SettingsIcon, Sparkles, Users } from 'lucide-react'
 import axios from 'axios'
 import { nanoid } from 'nanoid'
 import toast from 'react-hot-toast'
 import AddGroupMembersModal from './AddGroupMembersModal'
+import GroupSettingsModal from './GroupSettingsModal'
+import GroupFeaturesPanel from './GroupFeaturesPanel'
+import GroupMembersManager from './GroupMembersManager'
+import PinnedMessagesBanner from './PinnedMessagesBanner'
+import { useRouter } from 'next/navigation'
 
 interface ChatProps {
   chatPartner: User
@@ -28,7 +33,12 @@ const Chat: FC<ChatProps> = ({
   sessionImg,
   initialGroup,
 }) => {
+  const router = useRouter()
   const isGroupChat = chatId.startsWith('group--')
+  const [group, setGroup] = useState<Group | undefined>(initialGroup)
+  const [isGroupSettingsOpen, setIsGroupSettingsOpen] = useState(false)
+  const [isGroupFeaturesOpen, setIsGroupFeaturesOpen] = useState(false)
+  const [isMembersManagerOpen, setIsMembersManagerOpen] = useState(false)
   const groupId = isGroupChat ? chatId.replace('group--', '') : ''
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [isPartnerOnline, setIsPartnerOnline] = useState<boolean>(false)
@@ -44,6 +54,15 @@ const Chat: FC<ChatProps> = ({
     initialGroup?.memberIds?.length || 0
   )
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  const jumpToPinnedMessage = (messageId: string) => {
+    const element = document.getElementById(`message-${messageId}`)
+    if (!element) {
+      toast("This message is not in the currently loaded history")
+      return
+    }
+    element.scrollIntoView({ behavior: "smooth", block: "center" })
+  }
 
   useEffect(() => {
     setMessages(initialMessages)
@@ -73,6 +92,17 @@ const Chat: FC<ChatProps> = ({
     // 2. Private channel for typing indicators
     const privateChannelKey = toPusherKey(`private-chat:${chatId}`)
     const privateChannel = pusherClient.subscribe(privateChannelKey)
+    const userGroupsChannelKey = isGroupChat ? toPusherKey(`private-user:${sessionId}:groups`) : null
+    const userGroupsChannel = userGroupsChannelKey ? pusherClient.subscribe(userGroupsChannelKey) : null
+
+    const groupRemovedHandler = ({ groupId: removedGroupId }: { groupId: string }) => {
+      if (removedGroupId !== groupId) return
+      toast.error("You were removed from this group")
+      pusherClient.unsubscribe(presenceChannelKey)
+      pusherClient.unsubscribe(privateChannelKey)
+      if (userGroupsChannelKey) pusherClient.unsubscribe(userGroupsChannelKey)
+      router.push("/dashboard/chats")
+    }
 
     const typingHandler = ({ userId, isTyping: typingState }: { userId: string; isTyping: boolean }) => {
       if (userId === chatPartner.id) {
@@ -104,15 +134,18 @@ const Chat: FC<ChatProps> = ({
 
     privateChannel.bind('user_typing', typingHandler)
     privateChannel.bind('group_members_updated', groupMembersUpdatedHandler)
+    userGroupsChannel?.bind('group_removed', groupRemovedHandler)
 
     return () => {
       pusherClient.unsubscribe(presenceChannelKey)
       pusherClient.unsubscribe(privateChannelKey)
       privateChannel.unbind('user_typing', typingHandler)
       privateChannel.unbind('group_members_updated', groupMembersUpdatedHandler)
+      userGroupsChannel?.unbind('group_removed', groupRemovedHandler)
+      if (userGroupsChannelKey) pusherClient.unsubscribe(userGroupsChannelKey)
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
     }
-  }, [chatId, chatPartner.id])
+  }, [chatId, chatPartner.id, groupId, isGroupChat, router, sessionId])
 
   // Optimistic message sending handler
   const handleSendMessage = async (text: string, mediaPayload: any = {}) => {
@@ -237,6 +270,19 @@ const Chat: FC<ChatProps> = ({
 
         {/* Header Action Buttons */}
         <div className='flex items-center gap-2'>
+          {isGroupChat && group && (
+            <button onClick={() => setIsGroupFeaturesOpen(true)} className='p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-gray-300' title='Group activity' aria-label='Group activity'><Sparkles size={18} /></button>
+          )}
+          {/* Group member management */}
+          {isGroupChat && group && (
+            <button onClick={() => setIsMembersManagerOpen(true)} className='p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-gray-300' title='Manage members' aria-label='Manage members'><Users size={18} /></button>
+          )}
+          {/* Group settings and member controls */}
+          {isGroupChat && group && (
+            <button onClick={() => setIsGroupSettingsOpen(true)} className='p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-gray-300' title='Group settings' aria-label='Group settings'>
+              <SettingsIcon size={18} />
+            </button>
+          )}
           {/* Add Friends to Group Button */}
           {isGroupChat && (
             <button
@@ -283,6 +329,8 @@ const Chat: FC<ChatProps> = ({
         </div>
       </div>
 
+      {isGroupChat && <PinnedMessagesBanner groupId={groupId} onJumpTo={jumpToPinnedMessage} />}
+
       <Messages
         initialMessages={initialMessages}
         sessionId={sessionId}
@@ -305,6 +353,17 @@ const Chat: FC<ChatProps> = ({
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
       />
+
+      {isGroupChat && group && (
+        <GroupSettingsModal
+          isOpen={isGroupSettingsOpen}
+          onClose={() => setIsGroupSettingsOpen(false)}
+          group={group}
+          sessionId={sessionId}
+          onGroupUpdated={(updated) => { setGroup(updated); setExistingMemberIds(updated.memberIds); setMemberCount(updated.memberIds.length) }}
+          onLeave={() => router.push('/dashboard/chats')}
+        />
+      )}
 
       {/* Add Members to Group Modal */}
       {isGroupChat && (

@@ -88,9 +88,11 @@ export async function POST(req: Request) {
             if (!groupRaw) return new Response('Group not found', { status: 404 })
             const group = (typeof groupRaw === 'string' ? JSON.parse(groupRaw) : groupRaw) as Group
             const isAdmin = (group.adminIds || [group.creatorId]).includes(session.user.id)
-            if (group.settings?.onlyAdminsCanSendMessages && !isAdmin) {
+            if ((group.settings?.onlyAdminsCanSendMessages || group.settings?.announcementsOnly) && !isAdmin) {
                 return new Response('Only group admins can send messages', { status: 403 })
             }
+            const rawSenderPreferences = await db.get(`user:${session.user.id}:group-preferences:${groupId}`)
+            const senderPreferences = (typeof rawSenderPreferences === 'string' ? JSON.parse(rawSenderPreferences) : rawSenderPreferences) || {}
             if (!(await isValidReplyTarget(chatId, payload.replyTo))) {
                 return new Response('Cannot reply to a deleted or system-generated message', { status: 400 })
             }
@@ -101,13 +103,14 @@ export async function POST(req: Request) {
                 senderId: session.user.id,
                 text,
                 timestamp: timeStamp,
+                expiresAt: group.settings?.disappearingMessagesSeconds ? timeStamp + group.settings.disappearingMessagesSeconds * 1000 : undefined,
                 mediaUrl: payload.mediaUrl,
                 mediaType: payload.mediaType,
                 fileName: payload.fileName,
                 fileSize: payload.fileSize,
                 duration: payload.duration,
                 senderName: parsedSender?.name || 'Group Member',
-                senderImg: parsedSender?.image,
+                senderImg: senderPreferences.hideProfilePhoto ? undefined : parsedSender?.image,
                 replyTo: payload.replyTo
             }
 
@@ -115,15 +118,22 @@ export async function POST(req: Request) {
 
             // Persist message to group chat history
             operation = 'persist group message'
-            await db.zadd(`chat:${chatId}:messages`, {
-                score: timeStamp,
-                member: JSON.stringify(message)
-            })
+            const serializedMessage = JSON.stringify(message)
+            const messageKey = `chat:${chatId}:messages`
+            const persistence = db.pipeline()
+            persistence.zadd(messageKey, { score: timeStamp, member: serializedMessage })
+            if (message.expiresAt) {
+                persistence.zadd("chat:expiring", {
+                    score: message.expiresAt,
+                    member: JSON.stringify({ chatKey: messageKey, messageId: message.id, raw: serializedMessage })
+                })
+            }
+            await persistence.exec()
 
             // Broadcast after persistence. Pusher payloads must stay small: profile images
             // may be stored as data URLs and exceed Pusher's event-size limit.
             operation = 'broadcast group message'
-            const pusherMessage = { ...message, senderImg: message.senderImg?.startsWith('data:') || (message.senderImg?.length || 0) > 2048 ? undefined : message.senderImg }
+            const pusherMessage = { ...message, senderImg: senderPreferences.hideProfilePhoto || message.senderImg?.startsWith('data:') || (message.senderImg?.length || 0) > 2048 ? undefined : message.senderImg }
             const broadcastResults = await Promise.allSettled([
                 pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), 'incoming-message', pusherMessage)
             ])
@@ -136,6 +146,9 @@ export async function POST(req: Request) {
             operation = 'update group unread counts and notifications'
             await Promise.all(recipientMembers.map(async (memberId) => {
                 await db.hincrby(`user:${memberId}:unread`, chatId, 1)
+                const rawPreferences = await db.get(`user:${memberId}:group-preferences:${groupId}`)
+                const preferences = (typeof rawPreferences === 'string' ? JSON.parse(rawPreferences) : rawPreferences) || {}
+                if (preferences.notifications === 'muted') return
                 try {
                     await pusherServer.trigger(toPusherKey(`private-user:${memberId}:chats`), 'new_message', {
                         ...pusherMessage,

@@ -17,6 +17,11 @@ export const messageValidator = z.object({
     status: z.enum(['sending', 'sent', 'error']).optional(),
     isSeen: z.boolean().optional(),
     seenAt: z.number().optional(),
+    isPinned: z.boolean().optional(),
+    pinnedAt: z.number().optional(),
+    pinnedBy: z.string().optional(),
+    expiresAt: z.number().optional(),
+    mentions: z.array(z.string()).optional(),
     senderName: z.string().optional(),
     senderImg: z.string().optional(),
     replyTo: z.object({

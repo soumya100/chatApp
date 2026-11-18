@@ -56,18 +56,51 @@ export async function GET(req: Request) {
             try {
                 const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
                 const validated = messageValidator.parse(parsed)
-                messages.push(validated)
+                if (!validated.expiresAt || validated.expiresAt > Date.now()) messages.push(validated)
             } catch {
                 // skip corrupted message
             }
         }
 
-        const hasMore = messages.length === limit
+        // Use the raw page boundary, not the filtered list. Expired or malformed
+        // rows must not make the client believe that older history is exhausted.
+        const boundaryRaw = rawMessages.length ? rawMessages[rawMessages.length - 1] : null
+        let nextCursor: number | null = null
+        if (boundaryRaw) {
+            try {
+                const boundary = typeof boundaryRaw === "string" ? JSON.parse(boundaryRaw) : boundaryRaw
+                if (typeof boundary?.timestamp === "number") nextCursor = boundary.timestamp
+            } catch {
+                nextCursor = null
+            }
+        }
+
+        // Apply each sender's current group-level photo visibility preference
+        // to historical messages as well as to newly broadcast messages.
+        if (chatId.startsWith("group--") && messages.length) {
+            const groupId = chatId.slice("group--".length)
+            const senderIds = Array.from(new Set(messages.map(message => message.senderId).filter(id => id !== "system")))
+            if (senderIds.length) {
+                const preferencesPipeline = db.pipeline()
+                senderIds.forEach(senderId => preferencesPipeline.get(`user:${senderId}:group-preferences:${groupId}`))
+                const preferenceRows = await preferencesPipeline.exec()
+                const hiddenSenders = new Set<string>()
+                preferenceRows.forEach((raw, index) => {
+                    try {
+                        const preferences = typeof raw === "string" ? JSON.parse(raw) : raw
+                        if (preferences?.hideProfilePhoto) hiddenSenders.add(senderIds[index])
+                    } catch {}
+                })
+                messages.forEach(message => {
+                    if (hiddenSenders.has(message.senderId)) message.senderImg = undefined
+                })
+            }
+        }
 
         return Response.json({
             messages,
-            hasMore,
-            nextCursor: messages.length > 0 ? messages[messages.length - 1].timestamp : null
+            hasMore: rawMessages.length === limit,
+            nextCursor
         })
 
     } catch (error) {
