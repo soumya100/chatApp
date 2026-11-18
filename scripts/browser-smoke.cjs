@@ -50,6 +50,27 @@ async function togglePasswordVisibility(page, selector, reveal, engine) {
   assert.equal(lastType, expectedType, `${engine}: password visibility should ${expectedAction} the input`);
 }
 
+async function submitSignupExpecting(page, engine, fill, expectedText) {
+  // React hydrates after the first paint, and a submit delivered before
+  // hydration completes falls through to a native form POST that reloads the
+  // page and clears every field — so the client-side validation message can
+  // never appear on a single racy click. The submission is therefore retried
+  // within a bounded window, re-filling all fields on every attempt.
+  const deadline = Date.now() + 45_000;
+  let lastError = "";
+  while (Date.now() < deadline) {
+    await fill(page);
+    await page.getByRole("button", { name: "Create Account" }).click();
+    try {
+      await page.getByText(expectedText).waitFor({ timeout: 3_000 });
+      return;
+    } catch (error) {
+      lastError = error.message;
+    }
+  }
+  assert.fail(`${engine}: signup validation message "${expectedText}" never appeared: ${lastError}`);
+}
+
 async function exerciseBrowser(name, browserType) {
   const browser = await browserType.launch({ headless: true, args: name === "chromium" ? ["--no-sandbox"] : [] });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
@@ -72,17 +93,22 @@ async function exerciseBrowser(name, browserType) {
 
     await page.goto(`${baseUrl}/signup`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: /create an account/i }).waitFor();
-    await page.getByPlaceholder("Your Name").fill("Smoke Test");
-    await page.locator('input[autocomplete="email"]').fill("smoke@example.test");
-    await page.getByPlaceholder("Create a strong password").fill("abc");
-    await page.getByPlaceholder("Re-enter your password").fill("abc");
-    await page.getByRole("button", { name: "Create Account" }).click();
-    await page.getByText(/password does not satisfy the security requirements/i).waitFor();
-
-    await page.getByPlaceholder("Create a strong password").fill("Abcdef12!");
-    await page.getByPlaceholder("Re-enter your password").fill("Different12!");
-    await page.getByRole("button", { name: "Create Account" }).click();
-    await page.getByText("Passwords do not match.").waitFor();
+    const fillSignup = (password, confirmation) => p => {
+      p.getByPlaceholder("Your Name").fill("Smoke Test");
+      p.locator('input[autocomplete="email"]').fill("smoke@example.test");
+      p.getByPlaceholder("Create a strong password").fill(password);
+      p.getByPlaceholder("Re-enter your password").fill(confirmation);
+    };
+    await submitSignupExpecting(
+      page, name,
+      fillSignup("abc", "abc"),
+      /password does not satisfy the security requirements/i
+    );
+    await submitSignupExpecting(
+      page, name,
+      fillSignup("Abcdef12!", "Different12!"),
+      "Passwords do not match."
+    );
 
     const signupWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     assert.ok(signupWidth <= 391, `${name}: signup page overflows mobile viewport: ${signupWidth}px`);
