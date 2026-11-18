@@ -1,5 +1,17 @@
 const fs = require("node:fs");
 
+// ZAP reports are attacker-influenced content (alert names, URLs and site
+// names come from scanned responses). Everything derived from the report is
+// sanitized before it reaches CI logs so control characters cannot forge log
+// lines and oversized fields cannot flood them.
+function sanitizeLogField(value, maxLength = 200) {
+  return String(value)
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " " )
+    .trim()
+    .slice(0, maxLength);
+}
+
 function inspectReport(report) {
   if (!report || !Array.isArray(report.site)) {
     throw new Error("Unexpected ZAP JSON schema: site[] is missing");
@@ -14,10 +26,10 @@ function inspectReport(report) {
         throw new Error("Invalid or missing ZAP alert risk code; refusing to pass an unclassified finding");
       }
       return {
-        site: site["@name"] || site.name || "unknown",
+        site: sanitizeLogField(site["@name"] || site.name || "unknown", 120),
         risk,
-        name: alert.name || alert.alert || "Unnamed alert",
-        url: alert.url || "",
+        name: sanitizeLogField(alert.name || alert.alert || "Unnamed alert"),
+        url: sanitizeLogField(alert.url || "", 300),
       };
     });
   });
@@ -55,4 +67,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { inspectReport, validateFile };
+module.exports = { inspectReport, validateFile, sanitizeLogField };

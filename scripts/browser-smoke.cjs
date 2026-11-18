@@ -1,5 +1,21 @@
 const assert = require("node:assert/strict");
-const { chromium, firefox, webkit } = require("playwright");
+
+// Playwright is intentionally NOT a package.json dependency: it would pull the
+// multi-hundred-megabyte browser download into every yarn install. CI installs
+// the pinned global build instead (see chatapp-ci.yml, "Install pinned
+// Playwright and browser engines"). The version here must match that pin.
+const PLAYWRIGHT_PIN = "1.65.1";
+let playwright;
+try {
+  playwright = require("playwright");
+} catch {
+  throw new Error(
+    `Playwright is required by the browser smoke test but is not installed. ` +
+    `Install the pinned build: npm install --global playwright@${PLAYWRIGHT_PIN} ` +
+    `&& playwright install --with-deps chromium firefox webkit`
+  );
+}
+const { chromium, firefox, webkit } = playwright;
 
 const baseUrl = (process.env.CHATAPP_SMOKE_URL || "http://127.0.0.1:3100").replace(/\/$/, "");
 const engines = [

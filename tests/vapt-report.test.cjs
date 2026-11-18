@@ -33,3 +33,13 @@ test("ZAP report fails closed when an alert has an invalid or missing risk code"
   assert.throws(() => inspectReport({ site: [{ alerts: [{ riskcode: "unknown", name: "Unknown severity" }] }] }), /risk code/);
   assert.throws(() => inspectReport({ site: [{ alerts: {} }] }), /alerts must be an array/);
 });
+
+test("report-derived fields are sanitized before reaching CI logs", () => {
+  const { sanitizeLogField } = require("../scripts/validate-zap-report.cjs");
+  const hostile = "SQLi\r\n2026-11-18T00:00:00Z ERROR forged log line";
+  const sanitized = sanitizeLogField(hostile);
+  assert.doesNotMatch(sanitized, /[\r\n]/, "control characters must not survive into CI logs");
+  assert.equal(sanitized.includes("forged log line"), true, "legitimate content is preserved");
+  assert.equal(sanitizeLogField("x".repeat(500)).length <= 200, true, "oversized fields are capped");
+  assert.equal(sanitizeLogField("   spaced\tout   "), "spaced out");
+});
