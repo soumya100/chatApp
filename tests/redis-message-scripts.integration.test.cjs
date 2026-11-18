@@ -1,3 +1,6 @@
+// NOTE: these integration suites share one disposable Redis database and call
+// FLUSHDB per test, so they must never execute concurrently with each other.
+// `yarn test:redis` therefore runs node --test with --test-concurrency=1.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
