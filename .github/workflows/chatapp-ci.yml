@@ -52,6 +52,9 @@ jobs:
       - name: Install dependencies
         run: yarn install --non-interactive
 
+      - name: Dependency compatibility tests
+        run: yarn test
+
       - name: Typecheck
         run: npx tsc --noEmit
 
