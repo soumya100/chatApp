@@ -59,6 +59,10 @@ jobs:
         if: steps.config.outputs.configured == 'true'
         run: npm install --global vercel@latest
 
+      - name: Link the Vercel project
+        if: steps.config.outputs.configured == 'true'
+        run: vercel link --yes --project "$VERCEL_PROJECT_ID" --scope "$VERCEL_ORG_ID" --token "$VERCEL_TOKEN"
+
       - name: Pull production environment
         if: steps.config.outputs.configured == 'true'
         run: vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
