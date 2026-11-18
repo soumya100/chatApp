@@ -99,6 +99,7 @@ jobs:
         env:
           REDIS_HOST: 127.0.0.1
           REDIS_PORT: 6379
+          REDIS_INTEGRATION_ALLOW_FLUSHDB: "1"
         run: yarn test:redis
 
   build-and-browser-smoke:
