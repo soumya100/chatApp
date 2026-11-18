@@ -41,6 +41,18 @@ const EXCEPTED_ADVISORY = {
   module_name: "picomatch",
   severity: "high",
   url: "https://www.npmjs.com/advisories/1247710",
+  // The exception is enforced dev-only: findings whose paths start from a
+  // production dependency root, or an advisory with unknown topology,
+  // always block. Fixtures therefore carry the real dev-only paths.
+  findings: [
+    {
+      version: "4.0.7",
+      paths: [
+        "tailwindcss>micromatch>picomatch",
+        "eslint-config-next>@next/eslint-plugin-next>fast-glob>micromatch>picomatch",
+      ],
+    },
+  ],
 };
 
 const advisoryEvent = advisory =>
@@ -262,4 +274,41 @@ test("new: a non-zero yarn exit is tolerated when every advisory is time-boxed",
   assert.equal(result.status, 0);
   assert.equal(result.stderr.includes("TIME-BOXED EXCEPTION: 1247710: picomatch (high)"), true);
   assert.equal(result.stdout.includes("Dependency audit gate passed"), true);
+});
+
+test("new: a production-reachable picomatch path blocks even inside the exception window", () => {
+  const result = runAuditScript({
+    stdout: output([
+      advisoryEvent({
+        ...EXCEPTED_ADVISORY,
+        findings: [{ version: "4.0.7", paths: ["axios>picomatch"] }],
+      }),
+      summaryEvent(),
+    ]),
+    status: 0,
+  });
+
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr.includes("TIME-BOXED EXCEPTION"), false);
+  assert.equal(result.stderr.includes("Unexcepted high/critical dependency advisories:"), true);
+  assert.equal(result.stdout.includes("Dependency audit gate passed"), false);
+});
+
+test("new: an advisory with unknown topology blocks even inside the exception window", () => {
+  const result = runAuditScript({
+    stdout: output([
+      advisoryEvent({
+        id: 1247710,
+        module_name: "picomatch",
+        severity: "high",
+        url: "https://www.npmjs.com/advisories/1247710",
+      }),
+      summaryEvent(),
+    ]),
+    status: 0,
+  });
+
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr.includes("TIME-BOXED EXCEPTION"), false);
+  assert.equal(result.stdout.includes("Dependency audit gate passed"), false);
 });
