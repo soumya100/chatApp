@@ -233,3 +233,71 @@ test("upload: issues client tokens only for authenticated sessions with a bounde
   assert.equal(h.uploadConfigs.length, 1, "no token config may be recorded for rejected uploads");
   assert.equal(JSON.parse(config.tokenPayload).userId, "owner", "the token is bound to the uploader");
 });
+
+// -------------------------------------------------------------- media upload
+test("uploadMedia classifies media by MIME type first and only falls back to the extension", async () => {
+  const { uploadMedia } = h.loadRoute("src/lib/mediaUpload.ts");
+
+  const classificationCases = [
+    { name: "avatar.png", type: "image/png", expected: "image", uploadType: "image/png" },
+    { name: "clip.mov", type: "video/quicktime", expected: "video", uploadType: "video/quicktime" },
+    { name: "voice.webm", type: "audio/webm", expected: "audio", uploadType: "audio/webm" },
+    { name: "clip.webm", type: "video/webm", expected: "video", uploadType: "video/webm" },
+    { name: "voice.m4a", type: "audio/mp4", expected: "audio", uploadType: "audio/mp4" },
+    { name: "clip.mp4", type: "video/mp4", expected: "video", uploadType: "video/mp4" },
+    { name: "song.mp3", type: "audio/mpeg", expected: "audio", uploadType: "audio/mpeg" },
+    { name: "note.wav", type: "audio/wav", expected: "audio", uploadType: "audio/wav" },
+  ];
+  for (const { name, type, expected, uploadType } of classificationCases) {
+    h.reset();
+    const blob = await uploadMedia(new File(["media-bytes"], name, { type }));
+    assert.equal(blob.mediaType, expected, `${name} (${type}) must classify as ${expected}`);
+    assert.equal(h.uploadCalls.length, 1, `${name} must reach blob storage exactly once`);
+    assert.equal(h.uploadCalls[0].body.type, uploadType, `the original content type must reach blob storage for ${name}`);
+  }
+
+  // Documents keep the "file" classification; a missing generic content type
+  // is replaced by the canonical document type reaching storage.
+  h.reset();
+  const pdf = await uploadMedia(new File(["pdf-bytes"], "spec.pdf", { type: "application/pdf" }));
+  assert.equal(pdf.mediaType, "file");
+  assert.equal(h.uploadCalls[0].body.type, "application/pdf");
+
+  h.reset();
+  const unlabeled = await uploadMedia(new File(["pdf-bytes"], "spec.pdf"));
+  assert.equal(unlabeled.mediaType, "file", "no MIME and a document extension stays a file");
+  assert.equal(h.uploadCalls[0].body.type, "application/pdf", "the canonical document type is substituted");
+});
+
+test("uploadMedia keeps the allow-list and the 30 MB ceiling intact", async () => {
+  const { uploadMedia } = h.loadRoute("src/lib/mediaUpload.ts");
+
+  // Browser-active content must stay rejected: the extension fallback in the
+  // classifier is unreachable for media uploads because the MIME/extension
+  // allow-list runs first, and an extension alone can never admit an upload.
+  for (const [name, type] of [["evil.html", "text/html"], ["evil.svg", "image/svg+xml"]]) {
+    h.reset();
+    await assert.rejects(
+      () => uploadMedia(new File(["<script/>"], name, { type })),
+      /not supported/,
+      `${name} (${type}) must remain rejected`
+    );
+    assert.equal(h.uploadCalls.length, 0, `rejected uploads must never reach blob storage (${name})`);
+  }
+
+  h.reset();
+  await assert.rejects(
+    () => uploadMedia(new File(["x"], "voice.webm")),
+    /not supported/,
+    "an extension without a usable MIME type must not admit a media upload"
+  );
+  assert.equal(h.uploadCalls.length, 0);
+
+  h.reset();
+  await assert.rejects(
+    () => uploadMedia(new File([new ArrayBuffer(30 * 1024 * 1024 + 1)], "huge.mp4", { type: "video/mp4" })),
+    /30MB/,
+    "the 30 MB ceiling must hold"
+  );
+  assert.equal(h.uploadCalls.length, 0);
+});

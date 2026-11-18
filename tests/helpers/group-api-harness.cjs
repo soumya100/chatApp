@@ -24,6 +24,7 @@ const pusherEvents = [];
 const pusherAuthCalls = [];
 const blobCalls = [];
 const uploadConfigs = [];
+const uploadCalls = [];
 let pusherFailure = false;
 let blobFailure = false;
 
@@ -594,6 +595,14 @@ const blobClient = {
     uploadConfigs.push(config);
     return { type: body.type, token: "test-upload-token", ...config };
   },
+  // Client-side direct-to-blob upload used by src/lib/mediaUpload.ts; the
+  // pathname/body/options triple is recorded so tests can assert the exact
+  // content type that reaches blob storage.
+  async upload(pathname, body, options) {
+    if (blobFailure) throw new Error("Blob storage is unavailable in this test");
+    uploadCalls.push({ pathname, body, options });
+    return { url: `https://blob.test/${pathname}`, pathname };
+  },
 };
 
 const fetchRedisMock = async (command, ...args) => {
@@ -672,6 +681,7 @@ function reset(overrides = {}) {
   pusherAuthCalls.length = 0;
   blobCalls.length = 0;
   uploadConfigs.length = 0;
+  uploadCalls.length = 0;
   const group = {
     id: "g1",
     name: "Project room",
@@ -750,6 +760,6 @@ module.exports = {
   reset, setUser, setSession, setGroup, getGroup, setFeatures, getFeatures,
   setMessages, getMessages, setDirectMessages, getDirectMessages, seedSet, seedZsetEntry, seedKv,
   seedHash, getKv, getHash, getZset, forceRedisConflicts, setScriptRaceHook, setPusherFailure, setBlobFailure,
-  blobCalls, uploadConfigs, pusherAuthCalls, getSetMembers, request, requestRaw, body, loadRoute, pusherEvents,
+  blobCalls, uploadConfigs, uploadCalls, pusherAuthCalls, getSetMembers, request, requestRaw, body, loadRoute, pusherEvents,
   db,
 };
