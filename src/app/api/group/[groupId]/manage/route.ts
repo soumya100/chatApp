@@ -79,7 +79,7 @@ export async function POST(req: Request, { params }: { params: { groupId: string
 
         const parsed = schema.safeParse(await req.json())
         if (!parsed.success) {
-            return Response.json({ message: parsed.error.errors[0]?.message || "Invalid request" }, { status: 400 })
+            return Response.json({ message: parsed.error.issues[0]?.message || "Invalid request" }, { status: 400 })
         }
 
         const groupId = params.groupId
