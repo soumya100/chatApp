@@ -26,3 +26,10 @@ test("ZAP high and critical findings both block release", () => {
   assert.equal(result.blockers.length, 2);
   assert.deepEqual(result.blockers.map(item => item.risk), [3, 4]);
 });
+
+
+test("ZAP report fails closed when an alert has an invalid or missing risk code", () => {
+  assert.throws(() => inspectReport({ site: [{ alerts: [{ name: "Unknown severity" }] }] }), /risk code/);
+  assert.throws(() => inspectReport({ site: [{ alerts: [{ riskcode: "unknown", name: "Unknown severity" }] }] }), /risk code/);
+  assert.throws(() => inspectReport({ site: [{ alerts: {} }] }), /alerts must be an array/);
+});
