@@ -31,7 +31,7 @@ export async function POST(req: Request) {
         const parseResult = createGroupSchema.safeParse(await req.json())
         if (!parseResult.success) {
             return Response.json(
-                { message: parseResult.error.errors[0]?.message || "Invalid group payload" },
+                { message: parseResult.error.issues[0]?.message || "Invalid group payload" },
                 { status: 400 }
             )
         }

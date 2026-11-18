@@ -83,16 +83,16 @@ redis.call("SET", KEYS[1], cjson.encode(features))
 return cjson.encode({features = features, result = result})
 `
 
-export async function POST(req: Request, { params }: { params: { groupId: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ groupId: string }> }) {
+  const { groupId } = await params
   try {
     const session = await getServerSession(authOptions)
     const userId = session?.user?.id
     if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
 
     const parsed = schema.safeParse(await req.json())
-    if (!parsed.success) return Response.json({ message: parsed.error.errors[0]?.message || "Invalid request" }, { status: 400 })
+    if (!parsed.success) return Response.json({ message: parsed.error.issues[0]?.message || "Invalid request" }, { status: 400 })
 
-    const groupId = params.groupId
     const rawGroup = await db.get(`group:${groupId}`)
     if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
     const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
@@ -139,16 +139,17 @@ export async function POST(req: Request, { params }: { params: { groupId: string
   }
 }
 
-export async function GET(_req: Request, { params }: { params: { groupId: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ groupId: string }> }) {
+  const { groupId } = await params
   try {
     const session = await getServerSession(authOptions)
     const userId = session?.user?.id
     if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
-    const rawGroup = await db.get(`group:${params.groupId}`)
+    const rawGroup = await db.get(`group:${groupId}`)
     if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
     const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
     if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
-    const raw = await db.get(`group:${params.groupId}:features`)
+    const raw = await db.get(`group:${groupId}:features`)
     const features = (typeof raw === "string" ? JSON.parse(raw) : raw) || { polls: [], events: [], announcements: [] }
     features.polls = (features.polls || []).map((poll: any) => ({
       ...poll,

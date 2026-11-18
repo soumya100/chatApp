@@ -6,92 +6,76 @@ import { getServerSession } from "next-auth"
 import { z } from "zod"
 
 const editValidator = z.object({
-    messageId: z.string(),
-    chatId: z.string(),
-    newText: z.string().max(2000).default('')
+    messageId: z.string().min(1),
+    chatId: z.string().min(1),
+    newText: z.string().max(2000).default("")
 })
+
+const atomicEdit = `
+local rows = redis.call("ZRANGE", KEYS[1], 0, -1)
+for _, raw in ipairs(rows) do
+  local ok, message = pcall(cjson.decode, raw)
+  if ok and message.id == ARGV[1] then
+    if message.senderId == "system" or message.isDeleted then
+      return cjson.encode({error = "Message cannot be edited"})
+    end
+    if message.senderId ~= ARGV[2] then
+      return cjson.encode({error = "Forbidden"})
+    end
+    if (not message.mediaUrl or message.mediaUrl == cjson.null) and string.len(string.gsub(ARGV[3], "%s", "")) == 0 then
+      return cjson.encode({error = "Message text cannot be empty"})
+    end
+    message.text = ARGV[3]
+    message.isEdited = true
+    local updated = cjson.encode(message)
+    redis.call("ZREM", KEYS[1], raw)
+    redis.call("ZADD", KEYS[1], tonumber(message.timestamp), updated)
+    return cjson.encode({message = message})
+  end
+end
+return cjson.encode({error = "Message not found"})
+`
+
+function decodeResult(value: unknown): any {
+    return typeof value === "string" ? JSON.parse(value) : value
+}
 
 export async function POST(req: Request) {
     try {
         const session = await getServerSession(authOptions)
-        if (!session?.user?.id) {
-            return new Response('Unauthorized', { status: 401 })
-        }
+        const userId = session?.user?.id
+        if (!userId) return new Response("Unauthorized", { status: 401 })
 
-        const body = await req.json()
-        const { messageId, chatId, newText } = editValidator.parse(body)
+        const parsed = editValidator.safeParse(await req.json())
+        if (!parsed.success) return new Response("Invalid request payload", { status: 422 })
+        const { messageId, chatId, newText } = parsed.data
 
-        if (chatId.startsWith('group--')) {
-            const groupId = chatId.replace('group--', '')
-            const isMember = (await db.sismember(`group:${groupId}:members`, session.user.id)) as 0 | 1
-            if (!isMember) {
-                return new Response('Unauthorized: You are not a member of this group', { status: 403 })
-            }
+        if (chatId.startsWith("group--")) {
+            const groupId = chatId.slice("group--".length)
+            const isMember = await db.sismember(`group:${groupId}:members`, userId)
+            if (!isMember) return new Response("Forbidden: You are not a member of this group", { status: 403 })
         } else {
-            const [userId1, userId2] = chatId.split('--')
-            if (session.user.id !== userId1 && session.user.id !== userId2) {
-                return new Response('Unauthorized', { status: 401 })
-            }
+            const ids = chatId.split("--")
+            if (ids.length !== 2 || !ids.includes(userId)) return new Response("Forbidden", { status: 403 })
         }
 
-        const rawMembers = (await db.zrange(`chat:${chatId}:messages`, 0, -1)) as unknown[]
-        let oldMemberString: string | null = null
-        let targetMessage: Message | null = null
-
-        for (const raw of rawMembers) {
-            const rawStr = typeof raw === 'string' ? raw : JSON.stringify(raw)
-            try {
-                const parsed = JSON.parse(rawStr) as Message
-                if (parsed.id === messageId) {
-                    oldMemberString = rawStr
-                    targetMessage = parsed
-                    break
-                }
-            } catch {
-                continue
-            }
+        const rawResult = await db.eval(atomicEdit, [`chat:${chatId}:messages`], [messageId, userId, newText])
+        const result = decodeResult(rawResult)
+        if (result?.error) {
+            const status = result.error === "Message not found" ? 404 : result.error === "Forbidden" ? 403 : 400
+            return new Response(result.error, { status })
         }
 
-        if (!targetMessage || !oldMemberString) {
-            return new Response('Message not found', { status: 404 })
-        }
-
-        if (targetMessage.senderId !== session.user.id) {
-            return new Response('Forbidden: You can only edit your own messages', { status: 403 })
-        }
-
-        if (targetMessage.isDeleted) {
-            return new Response('Cannot edit a deleted message', { status: 400 })
-        }
-
-        if (!targetMessage.mediaUrl && newText.trim().length === 0) {
-            return new Response('Message text cannot be empty', { status: 400 })
-        }
-
-        const updatedMessage: Message = {
-            ...targetMessage,
-            text: newText,
-            isEdited: true
-        }
-
-        await db.zrem(`chat:${chatId}:messages`, oldMemberString)
-        await db.zadd(`chat:${chatId}:messages`, {
-            score: targetMessage.timestamp,
-            member: JSON.stringify(updatedMessage)
-        })
-
-        await pusherServer.trigger(
-            toPusherKey(`private-chat:${chatId}`),
-            'message_edited',
-            { messageId, text: newText, isEdited: true }
-        )
-
-        return new Response('OK')
+        await Promise.allSettled([
+            pusherServer.trigger(
+                toPusherKey(`private-chat:${chatId}`),
+                "message_edited",
+                { messageId, text: newText, isEdited: true }
+            )
+        ])
+        return new Response("OK")
     } catch (error) {
-        if (error instanceof z.ZodError) {
-            return new Response('Invalid request payload', { status: 422 })
-        }
-        return new Response('Internal server error', { status: 500 })
+        console.error("[message/edit] Failed:", error)
+        return new Response("Internal server error", { status: 500 })
     }
 }
-

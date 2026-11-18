@@ -11,6 +11,7 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("removeGroup"), groupId: z.string().min(1) }),
   z.object({ action: z.literal("inviteMember"), memberId: z.string().min(1) }),
   z.object({ action: z.literal("acceptInvite") }),
+  z.object({ action: z.literal("declineInvite") }),
   z.object({ action: z.literal("removeMember"), memberId: z.string().min(1) }),
   z.object({ action: z.literal("leave") })
 ])
@@ -41,7 +42,8 @@ function decode<T>(raw: unknown): T {
   return (typeof raw === "string" ? JSON.parse(raw) : raw) as T
 }
 
-export async function POST(req: Request, { params }: { params: { communityId: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ communityId: string }> }) {
+  const { communityId } = await params
   try {
     const session = await getServerSession(authOptions)
     const userId = session?.user?.id
@@ -50,10 +52,11 @@ export async function POST(req: Request, { params }: { params: { communityId: st
     if (!parsed.success) return Response.json({ message: "Invalid community action" }, { status: 400 })
 
     const action = parsed.data.action
-    const communityKey = `community:${params.communityId}`
+    const communityKey = `community:${communityId}`
 
     // Retry optimistic compare-and-set if another admin changed this community
-    // after our read. Every associated index/group update is in the same Lua call.
+    // after our read. Invitation decline removes both reciprocal indexes in the
+    // same Lua transaction, so the invitation cannot be left half-pending.
     for (let attempt = 0; attempt < 4; attempt++) {
       const raw = await db.get(communityKey)
       if (!raw) return Response.json({ message: "Community not found" }, { status: 404 })
@@ -62,13 +65,13 @@ export async function POST(req: Request, { params }: { params: { communityId: st
       const isMember = (community.memberIds || []).includes(userId)
       const isAdmin = (community.adminIds || [community.ownerId]).includes(userId)
 
-      if (parsed.data.action === "acceptInvite") {
-        const invited = await db.sismember(`community:${params.communityId}:invites`, userId)
+      if (action === "acceptInvite" || action === "declineInvite") {
+        const invited = await db.sismember(`community:${communityId}:invites`, userId)
         if (!invited) return Response.json({ message: "No pending invitation" }, { status: 404 })
       } else if (!isMember) {
         return Response.json({ message: "Not a community member" }, { status: 403 })
       }
-      if (action !== "leave" && action !== "acceptInvite" && !isAdmin) {
+      if (action !== "leave" && action !== "acceptInvite" && action !== "declineInvite" && !isAdmin) {
         return Response.json({ message: "Only community admins can manage it" }, { status: 403 })
       }
 
@@ -88,7 +91,7 @@ export async function POST(req: Request, { params }: { params: { communityId: st
         if (!(group.adminIds || [group.creatorId]).includes(userId)) return Response.json({ message: "You must administer the group" }, { status: 403 })
         const expectedGroupRaw = typeof groupRaw === "string" ? groupRaw : JSON.stringify(groupRaw)
 
-        if (group.communityId && group.communityId !== params.communityId) {
+        if (group.communityId && group.communityId !== communityId) {
           const previousKey = `community:${group.communityId}`
           const previousRaw = await db.get(previousKey)
           if (previousRaw) {
@@ -103,8 +106,8 @@ export async function POST(req: Request, { params }: { params: { communityId: st
         const groupMembers = await db.smembers(`group:${groupId}:members`) as string[]
         const linkedMembers = Array.from(new Set([...(groupMembers || []), group.creatorId]))
         next.memberIds = Array.from(new Set([...next.memberIds, ...linkedMembers]))
-        for (const memberId of linkedMembers) ops.push({ type: "sadd", key: `user:${memberId}:communities`, value: params.communityId })
-        ops.push({ type: "casSet", key: groupKey, expected: expectedGroupRaw, value: JSON.stringify({ ...group, communityId: params.communityId, updatedAt: Date.now() }) })
+        for (const memberId of linkedMembers) ops.push({ type: "sadd", key: `user:${memberId}:communities`, value: communityId })
+        ops.push({ type: "casSet", key: groupKey, expected: expectedGroupRaw, value: JSON.stringify({ ...group, communityId: communityId, updatedAt: Date.now() }) })
       } else if (parsed.data.action === "removeGroup") {
         const groupId = parsed.data.groupId
         next.groupIds = next.groupIds.filter((id: string) => id !== groupId)
@@ -112,7 +115,7 @@ export async function POST(req: Request, { params }: { params: { communityId: st
         const groupRaw = await db.get(groupKey)
         if (groupRaw) {
           const group = decode<Group>(groupRaw)
-          if (group.communityId === params.communityId) {
+          if (group.communityId === communityId) {
             const { communityId: _communityId, ...withoutCommunity } = group
             ops.push({ type: "casSet", key: groupKey, expected: typeof groupRaw === "string" ? groupRaw : JSON.stringify(groupRaw), value: JSON.stringify({ ...withoutCommunity, updatedAt: Date.now() }) })
           }
@@ -122,35 +125,39 @@ export async function POST(req: Request, { params }: { params: { communityId: st
         const target = await db.get(`user:${targetId}`)
         if (!target) return Response.json({ message: "User not found" }, { status: 404 })
         if (next.memberIds.includes(targetId)) return Response.json({ message: "User is already a member" }, { status: 409 })
-        ops.push({ type: "sadd", key: `community:${params.communityId}:invites`, value: targetId })
-        ops.push({ type: "sadd", key: `user:${targetId}:community-invites`, value: params.communityId })
+        ops.push({ type: "sadd", key: `community:${communityId}:invites`, value: targetId })
+        ops.push({ type: "sadd", key: `user:${targetId}:community-invites`, value: communityId })
       } else if (parsed.data.action === "acceptInvite") {
         next.memberIds = Array.from(new Set([...next.memberIds, userId]))
-        ops.push({ type: "srem", key: `community:${params.communityId}:invites`, value: userId })
-        ops.push({ type: "srem", key: `user:${userId}:community-invites`, value: params.communityId })
-        ops.push({ type: "sadd", key: `user:${userId}:communities`, value: params.communityId })
+        ops.push({ type: "srem", key: `community:${communityId}:invites`, value: userId })
+        ops.push({ type: "srem", key: `user:${userId}:community-invites`, value: communityId })
+        ops.push({ type: "sadd", key: `user:${userId}:communities`, value: communityId })
+      } else if (parsed.data.action === "declineInvite") {
+        // Idempotent removal from both sides of the invitation index.
+        ops.push({ type: "srem", key: `community:${communityId}:invites`, value: userId })
+        ops.push({ type: "srem", key: `user:${userId}:community-invites`, value: communityId })
       } else if (parsed.data.action === "removeMember") {
         const targetId = parsed.data.memberId
         if (targetId === community.ownerId) return Response.json({ message: "Transfer ownership before removing the owner" }, { status: 400 })
         if (!next.memberIds.includes(targetId)) return Response.json({ message: "User is not a community member" }, { status: 404 })
         next.memberIds = next.memberIds.filter((id: string) => id !== targetId)
         next.adminIds = next.adminIds.filter((id: string) => id !== targetId)
-        ops.push({ type: "srem", key: `user:${targetId}:communities`, value: params.communityId })
+        ops.push({ type: "srem", key: `user:${targetId}:communities`, value: communityId })
       } else if (parsed.data.action === "leave") {
         next.memberIds = next.memberIds.filter((id: string) => id !== userId)
         next.adminIds = next.adminIds.filter((id: string) => id !== userId)
-        ops.push({ type: "srem", key: `user:${userId}:communities`, value: params.communityId })
+        ops.push({ type: "srem", key: `user:${userId}:communities`, value: communityId })
         if (next.memberIds.length === 0) {
           deleteCommunity = true
-          const inviteIds = await db.smembers(`community:${params.communityId}:invites`) as string[]
-          for (const inviteeId of inviteIds || []) ops.push({ type: "srem", key: `user:${inviteeId}:community-invites`, value: params.communityId })
-          ops.push({ type: "del", key: `community:${params.communityId}:invites` })
+          const inviteIds = await db.smembers(`community:${communityId}:invites`) as string[]
+          for (const inviteeId of inviteIds || []) ops.push({ type: "srem", key: `user:${inviteeId}:community-invites`, value: communityId })
+          ops.push({ type: "del", key: `community:${communityId}:invites` })
           for (const groupId of next.groupIds) {
             const groupKey = `group:${groupId}`
             const groupRaw = await db.get(groupKey)
             if (groupRaw) {
               const group = decode<Group>(groupRaw)
-              if (group.communityId === params.communityId) {
+              if (group.communityId === communityId) {
                 const { communityId: _communityId, ...withoutCommunity } = group
                 ops.push({ type: "casSet", key: groupKey, expected: typeof groupRaw === "string" ? groupRaw : JSON.stringify(groupRaw), value: JSON.stringify(withoutCommunity) })
               }
@@ -178,7 +185,7 @@ export async function POST(req: Request, { params }: { params: { communityId: st
         JSON.stringify(indexedOps)
       ])
       if (Number(result) === 1) {
-        return Response.json({ success: true, deleted: deleteCommunity, community: deleteCommunity ? undefined : next })
+        return Response.json({ success: true, declined: action === "declineInvite", deleted: deleteCommunity, community: deleteCommunity ? undefined : next })
       }
     }
 

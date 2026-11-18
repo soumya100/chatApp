@@ -6,102 +6,84 @@ import { getServerSession } from "next-auth"
 import { z } from "zod"
 
 const reactValidator = z.object({
-    messageId: z.string(),
-    chatId: z.string(),
+    messageId: z.string().min(1),
+    chatId: z.string().min(1),
     emoji: z.string().min(1).max(8)
 })
+
+// Find, validate, toggle and replace the exact sorted-set member in one Redis
+// operation. A concurrent reaction can no longer overwrite another user's
+// update, and the ownership/deleted-message checks cannot be raced.
+const atomicReact = `
+local rows = redis.call("ZRANGE", KEYS[1], 0, -1)
+for _, raw in ipairs(rows) do
+  local ok, message = pcall(cjson.decode, raw)
+  if ok and message.id == ARGV[1] then
+    if message.senderId == "system" or message.isDeleted then
+      return cjson.encode({error = "Message cannot be reacted to"})
+    end
+    local reactions = message.reactions or {}
+    local users = reactions[ARGV[2]] or cjson.decode("[]")
+    local found = false
+    local nextUsers = {}
+    for _, id in ipairs(users) do
+      if id == ARGV[3] then found = true else table.insert(nextUsers, id) end
+    end
+    if not found then table.insert(nextUsers, ARGV[3]) end
+    if #nextUsers == 0 then reactions[ARGV[2]] = nil else reactions[ARGV[2]] = nextUsers end
+    message.reactions = reactions
+    local updated = cjson.encode(message)
+    redis.call("ZREM", KEYS[1], raw)
+    redis.call("ZADD", KEYS[1], tonumber(message.timestamp), updated)
+    return cjson.encode({message = message, reactions = reactions})
+  end
+end
+return cjson.encode({error = "Message not found"})
+`
+
+function decodeResult(value: unknown): any {
+    return typeof value === "string" ? JSON.parse(value) : value
+}
 
 export async function POST(req: Request) {
     try {
         const session = await getServerSession(authOptions)
-        if (!session?.user?.id) {
-            return new Response('Unauthorized', { status: 401 })
-        }
+        const userId = session?.user?.id
+        if (!userId) return new Response("Unauthorized", { status: 401 })
 
-        const body = await req.json()
-        const { messageId, chatId, emoji } = reactValidator.parse(body)
+        const parsed = reactValidator.safeParse(await req.json())
+        if (!parsed.success) return new Response("Invalid request payload", { status: 422 })
+        const { messageId, chatId, emoji } = parsed.data
 
         if (chatId.startsWith("group--")) {
             const groupId = chatId.slice("group--".length)
-            const isMember = await db.sismember(`group:${groupId}:members`, session.user.id)
+            const isMember = await db.sismember(`group:${groupId}:members`, userId)
             if (!isMember) return new Response("Forbidden", { status: 403 })
         } else {
             const ids = chatId.split("--")
-            if (ids.length !== 2 || !ids.includes(session.user.id)) {
-                return new Response("Forbidden", { status: 403 })
-            }
-            const friendId = ids[0] === session.user.id ? ids[1] : ids[0]
-            const isFriend = await db.sismember(`user:${session.user.id}:friends`, friendId)
+            if (ids.length !== 2 || !ids.includes(userId)) return new Response("Forbidden", { status: 403 })
+            const friendId = ids[0] === userId ? ids[1] : ids[0]
+            const isFriend = await db.sismember(`user:${userId}:friends`, friendId)
             if (!isFriend) return new Response("Forbidden", { status: 403 })
         }
 
-        const rawMembers = (await db.zrange(`chat:${chatId}:messages`, 0, -1)) as unknown[]
-        let oldMemberString: string | null = null
-        let targetMessage: Message | null = null
-
-        for (const raw of rawMembers) {
-            const rawStr = typeof raw === 'string' ? raw : JSON.stringify(raw)
-            try {
-                const parsed = JSON.parse(rawStr) as Message
-                if (parsed.id === messageId) {
-                    oldMemberString = rawStr
-                    targetMessage = parsed
-                    break
-                }
-            } catch {
-                continue
-            }
+        const rawResult = await db.eval(atomicReact, [`chat:${chatId}:messages`], [messageId, emoji, userId])
+        const result = decodeResult(rawResult)
+        if (result?.error) {
+            const status = result.error === "Message not found" ? 404 : 400
+            return new Response(result.error, { status })
         }
 
-        if (!targetMessage || !oldMemberString) {
-            return new Response('Message not found', { status: 404 })
-        }
-
-        if (targetMessage.senderId === 'system' || targetMessage.isDeleted) {
-            return new Response('Cannot react to a system-generated or deleted message', { status: 400 })
-        }
-
-        const currentReactions = { ...(targetMessage.reactions || {}) }
-        const usersForEmoji = [...(currentReactions[emoji] || [])]
-        const hasReacted = usersForEmoji.includes(session.user.id)
-
-        if (hasReacted) {
-            // Toggle off reaction
-            const updatedUsers = usersForEmoji.filter((id) => id !== session.user.id)
-            if (updatedUsers.length > 0) {
-                currentReactions[emoji] = updatedUsers
-            } else {
-                delete currentReactions[emoji]
-            }
-        } else {
-            // Toggle on reaction
-            usersForEmoji.push(session.user.id)
-            currentReactions[emoji] = usersForEmoji
-        }
-
-        const updatedMessage: Message = {
-            ...targetMessage,
-            reactions: currentReactions
-        }
-
-        await db.zrem(`chat:${chatId}:messages`, oldMemberString)
-        await db.zadd(`chat:${chatId}:messages`, {
-            score: targetMessage.timestamp,
-            member: JSON.stringify(updatedMessage)
-        })
-
-        await pusherServer.trigger(
-            toPusherKey(`private-chat:${chatId}`),
-            'message_reacted',
-            { messageId, reactions: currentReactions }
-        )
-
-        return Response.json({ reactions: currentReactions })
+        await Promise.allSettled([
+            pusherServer.trigger(
+                toPusherKey(`private-chat:${chatId}`),
+                "message_reacted",
+                { messageId, reactions: result.reactions }
+            )
+        ])
+        return Response.json({ reactions: result.reactions })
     } catch (error) {
-        if (error instanceof z.ZodError) {
-            return new Response('Invalid request payload', { status: 422 })
-        }
-        return new Response('Internal server error', { status: 500 })
+        console.error("[message/react] Failed:", error)
+        return new Response("Internal server error", { status: 500 })
     }
 }
-

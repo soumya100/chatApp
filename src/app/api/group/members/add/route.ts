@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
         const parsed = addMembersSchema.safeParse(await req.json())
         if (!parsed.success) {
-            return Response.json({ message: parsed.error.errors[0]?.message || "Invalid payload" }, { status: 400 })
+            return Response.json({ message: parsed.error.issues[0]?.message || "Invalid payload" }, { status: 400 })
         }
 
         const { groupId, memberIds } = parsed.data
