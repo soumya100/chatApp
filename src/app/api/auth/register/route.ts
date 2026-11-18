@@ -41,7 +41,7 @@ export async function POST(req: Request) {
 
         const parseResult = registerSchema.safeParse(body)
         if (!parseResult.success) {
-            const firstError = parseResult.error.errors[0]?.message || "Invalid input data"
+            const firstError = parseResult.error.issues[0]?.message || "Invalid input data"
             return new Response(JSON.stringify({ message: firstError }), {
                 status: 400,
                 headers: { "Content-Type": "application/json" }

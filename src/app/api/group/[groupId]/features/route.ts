@@ -90,7 +90,7 @@ export async function POST(req: Request, { params }: { params: { groupId: string
     if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
 
     const parsed = schema.safeParse(await req.json())
-    if (!parsed.success) return Response.json({ message: parsed.error.errors[0]?.message || "Invalid request" }, { status: 400 })
+    if (!parsed.success) return Response.json({ message: parsed.error.issues[0]?.message || "Invalid request" }, { status: 400 })
 
     const groupId = params.groupId
     const rawGroup = await db.get(`group:${groupId}`)

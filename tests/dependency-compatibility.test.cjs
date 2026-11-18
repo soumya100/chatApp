@@ -46,7 +46,12 @@ test("Zod 4.6.6 loads and enforces constrained collection limits", () => {
   const boundedCollection = z.array(z.string()).max(3);
 
   assert.deepEqual(boundedCollection.parse(["one", "two"]), ["one", "two"]);
-  assert.equal(boundedCollection.safeParse(["one", "two", "three", "four"]).success, false);
+  const invalid = boundedCollection.safeParse(["one", "two", "three", "four"]);
+  assert.equal(invalid.success, false);
+  if (!invalid.success) {
+    assert.ok(Array.isArray(invalid.error.issues));
+    assert.equal(typeof invalid.error.issues[0]?.message, "string");
+  }
 });
 
 test("security resolutions and lockfile do not restore reported vulnerable versions", () => {

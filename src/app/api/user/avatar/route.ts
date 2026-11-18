@@ -36,7 +36,7 @@ export async function POST(req: Request) {
 
         const parseResult = updateAvatarSchema.safeParse(body)
         if (!parseResult.success) {
-            const errorMsg = parseResult.error.errors[0]?.message || "Invalid avatar data"
+            const errorMsg = parseResult.error.issues[0]?.message || "Invalid avatar data"
             return new Response(JSON.stringify({ message: errorMsg }), {
                 status: 400,
                 headers: { "Content-Type": "application/json" }
