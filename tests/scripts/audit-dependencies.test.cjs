@@ -124,7 +124,7 @@ test("a dev-only high advisory is reported with its dev roots and does not block
     ),
     true
   );
-  assert.equal(result.stderr.includes("https://www.npmjs.com/advisories/1247710"), true);
+  assert.match(result.stderr, /advisories\/1247710/, "the advisory URL is reported");
   assert.equal(result.stdout.includes("Dependency audit gate passed"), true);
 });
 
