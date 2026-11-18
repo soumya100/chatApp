@@ -8,8 +8,7 @@ on:
   push:
     branches:
       - main
-      - feat/complete-group-experience
-      - fix/production-readiness-pr8
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,48 +17,134 @@ concurrency:
   group: chatapp-ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  UPSTASH_REDIS_REST_URL: https://example.upstash.io
+  UPSTASH_REDIS_REST_TOKEN: ci-only-placeholder
+  NEXTAUTH_SECRET: ci-only-placeholder-secret-not-for-production
+  NEXTAUTH_URL: http://localhost:3100
+  PUSHER_APP_ID: "123456"
+  NEXT_PUBLIC_PUSHER_APP_KEY: ci-only-placeholder
+  PUSHER_APP_SECRET: ci-only-placeholder
+  PUSHER_APP_CLUSTER: ap2
+  NEXT_PUBLIC_PUSHER_APP_CLUSTER: ap2
+  BLOB_READ_WRITE_TOKEN: ci-only-placeholder
+
 jobs:
-  validate:
-    name: Install, typecheck, lint and build
+  unit-and-static:
+    name: Unit, API regression and static checks (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      UPSTASH_REDIS_REST_URL: https://example.upstash.io
-      UPSTASH_REDIS_REST_TOKEN: build-only-placeholder
-      NEXTAUTH_SECRET: build-only-placeholder-secret
-      NEXTAUTH_URL: http://localhost:3000
-      PUSHER_APP_ID: "123456"
-      NEXT_PUBLIC_PUSHER_APP_KEY: build-only-placeholder
-      PUSHER_APP_SECRET: build-only-placeholder
-      PUSHER_APP_CLUSTER: ap2
-      NEXT_PUBLIC_PUSHER_APP_CLUSTER: ap2
-      BLOB_READ_WRITE_TOKEN: build-only-placeholder
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
-          cache: yarn
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
 
       - name: Activate Yarn Classic
         run: corepack prepare yarn@1.22.22 --activate
 
-      # The base branch currently has known lockfile drift. Use the same
-      # non-frozen install behavior as the existing Vercel deployment.
       - name: Install dependencies
         run: yarn install --non-interactive
 
-      - name: Dependency compatibility tests
+      - name: Unit and route-handler tests
         run: yarn test
 
-      - name: Typecheck
-        run: npx tsc --noEmit
+      - name: Security and UI regression contracts
+        run: yarn test:security
+
+      - name: TypeScript typecheck
+        run: yarn typecheck
 
       - name: Lint
         run: yarn lint
 
-      - name: Production build
+  production-smoke-and-vapt:
+    name: Production build, browser smoke and passive VAPT
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: unit-and-static
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Activate Yarn Classic
+        run: corepack prepare yarn@1.22.22 --activate
+
+      - name: Install dependencies
+        run: yarn install --non-interactive
+
+      - name: Audit production and development dependency tree
+        run: yarn audit --level high
+
+      - name: Build production bundle
         run: yarn build
+
+      - name: Install pinned Playwright
+        run: |
+          npm install --global playwright@1.65.1
+          playwright install --with-deps chromium firefox webkit
+
+      - name: Start production server
+        run: |
+          yarn start --port 3100 > /tmp/chatapp-next.log 2>&1 &
+          echo $! > /tmp/chatapp-next.pid
+
+      - name: Wait for production server
+        env:
+          CHATAPP_SMOKE_URL: http://127.0.0.1:3100
+        run: node scripts/wait-for-server.cjs
+
+      - name: HTTP smoke and unauthenticated API matrix
+        env:
+          CHATAPP_SMOKE_URL: http://127.0.0.1:3100
+        run: yarn test:smoke
+
+      - name: Chromium, Firefox and WebKit UI smoke
+        env:
+          CHATAPP_SMOKE_URL: http://127.0.0.1:3100
+          NODE_PATH: ${{ env.NODE_PATH }}
+        run: |
+          export NODE_PATH="$(npm root -g)"
+          yarn test:browser
+
+      - name: OWASP ZAP passive baseline scan
+        continue-on-error: true
+        run: |
+          docker run --rm --network host \
+            -v "${{ github.workspace }}:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://127.0.0.1:3100 -m 2 -J zap-report.json -I
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-baseline-report
+          path: zap-report.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Stop production server
+        if: always()
+        run: |
+          if [ -f /tmp/chatapp-next.pid ]; then
+            kill "$(cat /tmp/chatapp-next.pid)" || true
+          fi
+
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/chatapp-next.log || true
