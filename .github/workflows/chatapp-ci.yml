@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: chatapp-ci-\${{ github.ref }}
+  group: chatapp-ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -31,7 +31,7 @@ env:
 
 jobs:
   unit-and-static:
-    name: Unit, API regression and static checks (Node \${{ matrix.node }})
+    name: Unit, API regression and static checks (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -45,7 +45,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: \${{ matrix.node }}
+          node-version: ${{ matrix.node }}
           package-manager-cache: false
 
       - name: Activate Yarn Classic
@@ -211,7 +211,7 @@ jobs:
         run: |
           docker run --rm --network host \
             --workdir /zap/wrk \
-            -v "\${{ github.workspace }}:/zap/wrk:rw" \
+            -v "${{ github.workspace }}:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py -t http://127.0.0.1:3100 -m 3 -J /zap/wrk/zap-report.json -I
 
@@ -259,7 +259,7 @@ jobs:
       - name: Gitleaks secret scan
         uses: gitleaks/gitleaks-action@v2
         env:
-          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Review new pull-request dependencies
         if: github.event_name == 'pull_request'
