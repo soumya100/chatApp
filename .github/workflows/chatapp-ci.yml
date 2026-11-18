@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: chatapp-ci-${{ github.ref }}
+  group: chatapp-ci-\${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -31,9 +31,9 @@ env:
 
 jobs:
   unit-and-static:
-    name: Unit, API regression and static checks (Node ${{ matrix.node }})
+    name: Unit, API regression and static checks (Node \${{ matrix.node }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -45,19 +45,19 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: ${{ matrix.node }}
+          node-version: \${{ matrix.node }}
           package-manager-cache: false
 
       - name: Activate Yarn Classic
         run: corepack prepare yarn@1.22.22 --activate
 
-      - name: Install dependencies
-        run: yarn install --non-interactive
+      - name: Install locked dependencies
+        run: yarn install --frozen-lockfile --non-interactive
 
-      - name: Unit and route-handler tests
+      - name: Unit and API regression suite
         run: yarn test
 
-      - name: Security and UI regression contracts
+      - name: Security and source regression contracts
         run: yarn test:security
 
       - name: TypeScript typecheck
@@ -66,8 +66,43 @@ jobs:
       - name: Lint
         run: yarn lint
 
-  production-smoke-and-vapt:
-    name: Production build, browser smoke and passive VAPT
+  redis-lua-integration:
+    name: Real Redis Lua integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install Redis CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes redis-tools
+
+      - name: Run real Redis integration tests
+        env:
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+        run: yarn test:redis
+
+  build-and-browser-smoke:
+    name: Production build, HTTP and cross-browser smoke
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: unit-and-static
@@ -84,16 +119,16 @@ jobs:
       - name: Activate Yarn Classic
         run: corepack prepare yarn@1.22.22 --activate
 
-      - name: Install dependencies
-        run: yarn install --non-interactive
+      - name: Install locked dependencies
+        run: yarn install --frozen-lockfile --non-interactive
 
-      - name: Audit production and development dependency tree
+      - name: Audit production and development dependencies
         run: yarn audit:security
 
       - name: Build production bundle
         run: yarn build
 
-      - name: Install pinned Playwright
+      - name: Install pinned Playwright and browser engines
         run: |
           npm install --global playwright@1.65.1
           playwright install --with-deps chromium firefox webkit
@@ -120,21 +155,12 @@ jobs:
           export NODE_PATH="$(npm root -g)"
           yarn test:browser
 
-      - name: OWASP ZAP passive baseline scan
-        continue-on-error: true
-        run: |
-          docker run --rm --network host \
-            --workdir /zap/wrk \
-            -v "${{ github.workspace }}:/zap/wrk:rw" \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://127.0.0.1:3100 -m 2 -J /zap/wrk/zap-report.json -I
-
-      - name: Upload ZAP report
-        if: always()
+      - name: Upload production server log on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: zap-baseline-report
-          path: zap-report.json
+          name: production-smoke-server-log
+          path: /tmp/chatapp-next.log
           if-no-files-found: ignore
           retention-days: 14
 
@@ -145,6 +171,122 @@ jobs:
             kill "$(cat /tmp/chatapp-next.pid)" || true
           fi
 
+  vapt:
+    name: OWASP ZAP passive VAPT baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: unit-and-static
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Activate Yarn Classic
+        run: corepack prepare yarn@1.22.22 --activate
+
+      - name: Install locked dependencies
+        run: yarn install --frozen-lockfile --non-interactive
+
+      - name: Build production bundle
+        run: yarn build
+
+      - name: Start production server
+        run: |
+          yarn start --port 3100 > /tmp/chatapp-vapt.log 2>&1 &
+          echo $! > /tmp/chatapp-vapt.pid
+
+      - name: Wait for production server
+        env:
+          CHATAPP_SMOKE_URL: http://127.0.0.1:3100
+        run: node scripts/wait-for-server.cjs
+
+      - name: Run OWASP ZAP passive baseline scan
+        id: zap
+        continue-on-error: true
+        run: |
+          docker run --rm --network host \
+            --workdir /zap/wrk \
+            -v "\${{ github.workspace }}:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://127.0.0.1:3100 -m 3 -J /zap/wrk/zap-report.json -I
+
+      - name: Validate ZAP report and block High/Critical findings
+        if: always()
+        run: node scripts/validate-zap-report.cjs zap-report.json
+
+      - name: Upload VAPT report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-vapt-report
+          path: zap-report.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Fail if ZAP scanner reported an error
+        if: steps.zap.outcome == 'failure'
+        run: exit 1
+
+      - name: Stop production server
+        if: always()
+        run: |
+          if [ -f /tmp/chatapp-vapt.pid ]; then
+            kill "$(cat /tmp/chatapp-vapt.pid)" || true
+          fi
+
       - name: Print server log on failure
         if: failure()
-        run: cat /tmp/chatapp-next.log || true
+        run: cat /tmp/chatapp-vapt.log || true
+
+  supply-chain-security:
+    name: Dependency review and secret scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout complete Git history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+
+      - name: Review new pull-request dependencies
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: always
+
+  codeql:
+    name: CodeQL JavaScript and TypeScript analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:javascript-typescript"
