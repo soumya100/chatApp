@@ -291,3 +291,71 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:javascript-typescript"
+
+  vapt-active:
+    name: OWASP ZAP active scan (unauthenticated)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: unit-and-static
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Activate Yarn Classic
+        run: corepack prepare yarn@1.22.22 --activate
+
+      - name: Install locked dependencies
+        run: yarn install --frozen-lockfile --non-interactive
+
+      - name: Build production bundle
+        run: yarn build
+
+      - name: Start production server
+        run: |
+          yarn start --port 3100 > /tmp/chatapp-vapt-active.log 2>&1 &
+          echo $! > /tmp/chatapp-vapt-active.pid
+
+      - name: Wait for production server
+        env:
+          CHATAPP_SMOKE_URL: http://127.0.0.1:3100
+        run: node scripts/wait-for-server.cjs
+
+      - name: Run OWASP ZAP active scan
+        id: zap-active
+        continue-on-error: true
+        run: |
+          docker run --rm --network host --user root \
+            --workdir /zap/wrk \
+            -v "${{ github.workspace }}:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-full-scan.py -t http://127.0.0.1:3100 -m 5 -J zap-active-report.json -I
+
+      - name: Validate active-scan report and block High/Critical findings
+        if: always()
+        run: node scripts/validate-zap-report.cjs zap-active-report.json
+
+      - name: Upload active-scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-active-report
+          path: zap-active-report.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Fail if ZAP scanner reported an error
+        if: steps.zap-active.outcome == 'failure'
+        run: exit 1
+
+      - name: Stop production server
+        if: always()
+        run: |
+          if [ -f /tmp/chatapp-vapt-active.pid ]; then
+            kill "$(cat /tmp/chatapp-vapt-active.pid)" || true
+          fi
