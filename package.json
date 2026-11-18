@@ -15,7 +15,8 @@
     "test:security": "node --test tests/security-regression.test.cjs tests/source-regression.test.cjs",
     "test:smoke": "node scripts/smoke-test.cjs",
     "test:browser": "node scripts/browser-smoke.cjs",
-    "test:all": "yarn test && yarn typecheck && yarn lint && yarn build"
+    "test:all": "yarn test && yarn typecheck && yarn lint && yarn build",
+    "audit:security": "node scripts/audit-dependencies.cjs"
   },
   "dependencies": {
     "@headlessui/react": "^1.7.19",
