@@ -189,7 +189,7 @@ require.extensions[".ts"] = function (module, filename) {
   module._compile(output, filename);
 };
 
-const root = path.resolve(__dirname, "..");
+const root = path.resolve(__dirname, "../..");
 function loadRoute(relativePath) {
   return require(path.join(root, relativePath));
 }
