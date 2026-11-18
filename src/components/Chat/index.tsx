@@ -10,12 +10,16 @@ import { Search, UserPlus, X, Settings as SettingsIcon, Sparkles, Users } from '
 import axios from 'axios'
 import { nanoid } from 'nanoid'
 import toast from 'react-hot-toast'
-import AddGroupMembersModal from './AddGroupMembersModal'
-import GroupSettingsModal from './GroupSettingsModal'
-import GroupFeaturesPanel from './GroupFeaturesPanel'
-import GroupMembersManager from './GroupMembersManager'
+import dynamic from 'next/dynamic'
 import PinnedMessagesBanner from './PinnedMessagesBanner'
 import { useRouter } from 'next/navigation'
+
+// The group dialogs are only ever mounted after a user action, so they load
+// lazily and keep their markup out of the first-load chat chunk.
+const AddGroupMembersModal = dynamic(() => import('./AddGroupMembersModal'), { ssr: false })
+const GroupSettingsModal = dynamic(() => import('./GroupSettingsModal'), { ssr: false })
+const GroupFeaturesPanel = dynamic(() => import('./GroupFeaturesPanel'), { ssr: false })
+const GroupMembersManager = dynamic(() => import('./GroupMembersManager'), { ssr: false })
 
 interface ChatProps {
   chatPartner: User

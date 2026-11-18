@@ -4,11 +4,53 @@ import { FC, useCallback, useEffect, useMemo, useState } from "react"
 import axios from "axios"
 import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
-import { Avatar, Button } from "@/common"
+import Avatar from "@/common/Avatar"
+import Button from "@/common/Button"
 import { resolveAdminIds } from "@/lib/group"
 import { Crown, Loader2, Search, Shield, ShieldOff, UserMinus, Users, X } from "lucide-react"
 
 interface MemberProfile { id: string; name: string; image?: string }
+
+interface MemberRowProps {
+  member: MemberProfile
+  sessionId: string
+  creatorId: string
+  adminIds: string[]
+  canManage: boolean
+  busyId: string | null
+  onAct: (action: "promote" | "demote" | "remove", memberId: string) => void
+}
+
+// One roster row: badges, avatar and the admin-only role/membership actions.
+// Extracted from the dialog body so each function holds one responsibility.
+const MemberRow: FC<MemberRowProps> = ({ member, sessionId, creatorId, adminIds, canManage, busyId, onAct }) => {
+  const admin = adminIds.includes(member.id)
+  const creator = member.id === creatorId
+  const isSelf = member.id === sessionId
+  const viewerIsCreator = sessionId === creatorId
+  return (
+    <div className="flex items-center gap-3 py-3.5">
+      <Avatar src={member.image || ""} name={member.name} sizeClassName="h-11 w-11" textClassName="text-sm font-semibold text-white"/>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-sm font-semibold">{isSelf ? "You" : member.name}</p>
+          {creator ? <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-400/10 dark:text-amber-300"><Crown size={11}/> Creator</span> : admin ? <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-400/10 dark:text-indigo-300">Admin</span> : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-white/[0.06] dark:text-slate-400">Member</span>}
+        </div>
+        <p className="mt-0.5 truncate text-[11px] text-slate-400">{member.id}</p>
+      </div>
+      {canManage && !isSelf && !creator && (
+        <div className="flex shrink-0 items-center gap-1">
+          {viewerIsCreator && (admin
+            ? <button type="button" disabled={!!busyId} onClick={() => onAct("demote", member.id)} title="Remove admin role" aria-label={`Remove admin role from ${member.name}`} className="rounded-xl p-2.5 text-slate-500 transition hover:bg-slate-100 hover:text-indigo-600 disabled:opacity-40 dark:text-slate-400 dark:hover:bg-white/10"><ShieldOff size={16}/></button>
+            : <button type="button" disabled={!!busyId} onClick={() => onAct("promote", member.id)} title="Make admin" aria-label={`Promote ${member.name} to admin`} className="rounded-xl p-2.5 text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40 dark:text-slate-400 dark:hover:bg-indigo-400/10"><Shield size={16}/></button>
+          )}
+          <button type="button" disabled={!!busyId} onClick={() => onAct("remove", member.id)} title="Remove member" aria-label={`Remove ${member.name}`} className="rounded-xl p-2.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 dark:hover:bg-rose-400/10">{busyId === member.id ? <Loader2 size={16} className="animate-spin"/> : <UserMinus size={16}/>}</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface Props {
   isOpen: boolean
   onClose: () => void
@@ -42,7 +84,7 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
     } finally {
       setLoading(false)
     }
-  }, [group.id, group.memberIds, sessionId])
+  }, [group.id])
 
   useEffect(() => {
     if (isOpen) {
@@ -105,32 +147,18 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
               <div className="py-12 text-center"><Users size={28} className="mx-auto text-slate-300 dark:text-slate-600"/><p className="mt-3 text-sm font-medium">No members found</p><p className="mt-1 text-xs text-slate-500">Try another name or search term.</p></div>
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                {visibleMembers.map(member => {
-                  const admin = adminIds.includes(member.id)
-                  const creator = member.id === group.creatorId
-                  const isSelf = member.id === sessionId
-                  return (
-                    <div key={member.id} className="flex items-center gap-3 py-3.5">
-                      <Avatar src={member.image || ""} name={member.name} sizeClassName="h-11 w-11" textClassName="text-sm font-semibold text-white"/>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate text-sm font-semibold">{isSelf ? "You" : member.name}</p>
-                          {creator ? <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-400/10 dark:text-amber-300"><Crown size={11}/> Creator</span> : admin ? <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-400/10 dark:text-indigo-300">Admin</span> : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-white/[0.06] dark:text-slate-400">Member</span>}
-                        </div>
-                        <p className="mt-0.5 truncate text-[11px] text-slate-400">{member.id}</p>
-                      </div>
-                      {isAdmin && !isSelf && !creator && (
-                        <div className="flex shrink-0 items-center gap-1">
-                          {isCreator && (admin
-                            ? <button type="button" disabled={!!busyId} onClick={() => act("demote", member.id)} title="Remove admin role" aria-label={`Remove admin role from ${member.name}`} className="rounded-xl p-2.5 text-slate-500 transition hover:bg-slate-100 hover:text-indigo-600 disabled:opacity-40 dark:text-slate-400 dark:hover:bg-white/10"><ShieldOff size={16}/></button>
-                            : <button type="button" disabled={!!busyId} onClick={() => act("promote", member.id)} title="Make admin" aria-label={`Promote ${member.name} to admin`} className="rounded-xl p-2.5 text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40 dark:text-slate-400 dark:hover:bg-indigo-400/10"><Shield size={16}/></button>
-                          )}
-                          <button type="button" disabled={!!busyId} onClick={() => act("remove", member.id)} title="Remove member" aria-label={`Remove ${member.name}`} className="rounded-xl p-2.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 dark:hover:bg-rose-400/10">{busyId === member.id ? <Loader2 size={16} className="animate-spin"/> : <UserMinus size={16}/>}</button>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+                {visibleMembers.map(member => (
+                  <MemberRow
+                    key={member.id}
+                    member={member}
+                    sessionId={sessionId}
+                    creatorId={group.creatorId}
+                    adminIds={adminIds}
+                    canManage={isAdmin}
+                    busyId={busyId}
+                    onAct={act}
+                  />
+                ))}
               </div>
             )}
           </div>
