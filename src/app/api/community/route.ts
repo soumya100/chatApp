@@ -39,7 +39,7 @@ export async function POST(req: Request) {
   const userId = session?.user?.id
   if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
   const parsed = createSchema.safeParse(await req.json())
-  if (!parsed.success) return Response.json({ message: parsed.error.errors[0]?.message || "Invalid community" }, { status: 400 })
+  if (!parsed.success) return Response.json({ message: parsed.error.issues[0]?.message || "Invalid community" }, { status: 400 })
   const { name, description, groupIds } = parsed.data
   const groups: Group[] = []
   const memberIds = new Set<string>([userId])
