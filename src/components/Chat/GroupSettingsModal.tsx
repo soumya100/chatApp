@@ -52,7 +52,7 @@ const tabs: { id: SettingsTab; label: string; icon: typeof Info }[] = [
 ]
 
 const GroupSettingsModal: FC<Props> = ({ isOpen, onClose, group, sessionId, onGroupUpdated, onLeave }) => {
-  const isAdmin = (group.adminIds || [group.creatorId]).includes(sessionId)
+  const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(sessionId)
   const [activeTab, setActiveTab] = useState<SettingsTab>("general")
   const [name, setName] = useState(group.name)
   const [description, setDescription] = useState(group.description || "")
