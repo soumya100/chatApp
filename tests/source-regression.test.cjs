@@ -20,7 +20,7 @@ test("the API route inventory is complete and every route exports an HTTP handle
 
   for (const file of routes) {
     const source = fs.readFileSync(file, "utf8");
-    assert.match(source, /export\s+async\s+function\s+(GET|POST|PUT|PATCH|DELETE)/, path.relative(root, file));
+    assert.match(source, /export\s+async\s+function\s+(GET|POST|PUT|PATCH|DELETE)|export\s+\{\s*handler\s+as\s+GET,\s*handler\s+as\s+POST\s*\}/, path.relative(root, file));
   }
 });
 
@@ -123,6 +123,6 @@ test("the group settings and activity APIs use bounded validation and membership
   assert.match(features, /\.max\(10\)/);
   assert.match(features, /memberIds\s*\|\|\s*\[\]\)\.includes\(userId\)/);
   assert.match(pins, /messageId:\s*z\.string\(\)\.min\(1\)/);
-  assert.match(pins, /message\.senderId\s*===\s*"system"\s*\|\|\s*message\.isDeleted/);
+  assert.match(pins, /message\.senderId\s*==\s*"system"\s+or\s+message\.isDeleted/);
   assert.match(privacy, /notifications:\s*z\.enum\(\["all",\s*"muted"\]\)/);
 });
