@@ -257,6 +257,7 @@ function reset(overrides = {}) {
   return group;
 }
 
+function setUser(userId, user) { users.set(userId, JSON.stringify({ id: userId, ...user })); }
 function setSession(userId, name = "Test user") {
   session = userId ? { user: { id: userId, name } } : null;
 }
@@ -282,6 +283,6 @@ function request(body, method = "POST", url = "http://localhost/api/test") {
 async function body(response) { return response.json(); }
 
 module.exports = {
-  reset, setSession, setGroup, getGroup, setFeatures, getFeatures,
+  reset, setUser, setSession, setGroup, getGroup, setFeatures, getFeatures,
   setMessages, getMessages, forceRedisConflicts, setPusherFailure, getSetMembers, request, requestRaw, body, loadRoute, pusherEvents,
 };
