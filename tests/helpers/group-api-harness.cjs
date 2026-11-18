@@ -401,6 +401,23 @@ const db = {
       const current = groups.get(groupId);
       if (current !== args[0]) return 0;
       const action = args[1];
+      if (action === "addMembers") {
+        groups.set(groupId, args[2]);
+        const addedIds = JSON.parse(args[5]);
+        for (const memberId of addedIds) {
+          sadd(`group:${groupId}:members`, memberId);
+          sadd(`user:${memberId}:groups`, groupId);
+        }
+        if (args[6]) {
+          const message = parse(args[6]);
+          const rows = zsets.get(keys[2]) || [];
+          rows.push({ score: message.timestamp, member: args[6] });
+          zsets.set(keys[2], rows);
+        }
+        if (args[8]) writeRaw(args[8], args[9]);
+        for (const memberId of addedIds) sadd(`user:${memberId}:communities`, args[10]);
+        return 1;
+      }
       const deleteGroup = args[7] === "true";
       if (deleteGroup) {
         groups.delete(groupId);
