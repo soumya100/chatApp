@@ -51,6 +51,8 @@ elseif action == "votePoll" then
   for _, option in ipairs(poll.options or {}) do
     option.votes = option.votes or cjson.decode("[]")
     for i = #option.votes, 1, -1 do if option.votes[i] == userId then table.remove(option.votes, i) end end
+    -- Lua cjson serializes an emptied plain table as an object; preserve the API's array shape.
+    if #option.votes == 0 then option.votes = cjson.decode("[]") end
   end
   for _, option in ipairs(poll.options or {}) do
     if selected[option.id] then table.insert(option.votes, userId) end
