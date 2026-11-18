@@ -58,20 +58,25 @@ function classifyAdvisories(advisories) {
 }
 
 // Parses Yarn's line-delimited JSON audit output. Unparsable lines are
-// counted and reported by the caller instead of being swallowed silently.
+// counted and reported by the caller instead of being swallowed silently,
+// and the terminal auditSummary record is tracked so an interrupted or
+// truncated audit run can never be mistaken for a completed pass.
 function parseAuditEvents(stdout) {
   const events = [];
   let unparsedLines = 0;
+  let hasSummary = false;
   for (const line of stdout.split(/\r?\n/)) {
     if (!line.trim()) continue;
     try {
-      events.push(JSON.parse(line));
+      const event = JSON.parse(line);
+      events.push(event);
+      if (event.type === "auditSummary") hasSummary = true;
     } catch {
       // Yarn emits human-readable progress lines only when JSON mode is absent.
       unparsedLines += 1;
     }
   }
-  return { events, unparsedLines };
+  return { events, unparsedLines, hasSummary };
 }
 
 function runAudit() {
@@ -83,7 +88,7 @@ function runAudit() {
 
   if (result.error) throw result.error;
 
-  const { events, unparsedLines } = parseAuditEvents(result.stdout || "");
+  const { events, unparsedLines, hasSummary } = parseAuditEvents(result.stdout || "");
   const advisories = events
     .filter(event => event.type === "auditAdvisory")
     .map(event => event.data?.advisory)
@@ -92,6 +97,14 @@ function runAudit() {
   if (!events.length || (!advisories.length && result.status !== 0)) {
     process.stderr.write(result.stderr || result.stdout || "Yarn audit produced no parseable JSON output.\n");
     throw new Error("Dependency audit could not be parsed; failing closed.");
+  }
+
+  // Yarn terminates every completed audit with an auditSummary record. Its
+  // absence means the run was interrupted or truncated mid-stream: treating
+  // the partial advisory list as a full result would be fail-open.
+  if (!hasSummary) {
+    process.stderr.write(result.stderr || result.stdout || "Yarn audit ended without its auditSummary record.\n");
+    throw new Error("Dependency audit ended without the auditSummary record (interrupted or truncated run); failing closed.");
   }
 
   const classified = classifyAdvisories(advisories);
@@ -107,6 +120,14 @@ function runAudit() {
       `DEV-ONLY ADVISORY (reported, not blocking): ${uniqueAdvisory(advisory)} is reachable only through ` +
       `devDependency root(s) [${devRoots(advisory).join(", ")}] and cannot ship to production. ` +
       `${advisory.url || "no advisory URL"}`
+    );
+  }
+
+  if (classified.devOnly.length) {
+    console.warn(
+      `DEV-ONLY ADVISORY SUMMARY: ${classified.devOnly.length} high/critical advisory(ies) reported above do not ` +
+      `block because every finding path roots at a devDependency (build-time tooling, never shipped to production). ` +
+      `This gate grants no per-advisory exceptions: production-reachable high/critical findings always fail the build.`
     );
   }
 

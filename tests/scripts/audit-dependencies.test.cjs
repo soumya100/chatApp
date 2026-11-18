@@ -125,6 +125,13 @@ test("a dev-only high advisory is reported with its dev roots and does not block
     true
   );
   assert.match(result.stderr, /advisories\/1247710/, "the advisory URL is reported");
+  assert.equal(
+    result.stderr.includes(
+      "DEV-ONLY ADVISORY SUMMARY: 1 high/critical advisory(ies) reported above do not "
+    ),
+    true,
+    "the dev-only policy summary must state why the finding does not block"
+  );
   assert.equal(result.stdout.includes("Dependency audit gate passed"), true);
 });
 
@@ -185,6 +192,25 @@ test("fails closed when yarn audit produces no parseable JSON", () => {
     result.stderr.includes("Yarn audit produced no parseable JSON output."),
     true
   );
+});
+
+test("fails closed when the audit stream is truncated and auditSummary never arrives", () => {
+  // An interrupted run can emit advisories and then die with exit code 0;
+  // without the terminal auditSummary record the advisory list is partial,
+  // so the gate must fail closed instead of passing on the prefix.
+  const result = runAuditScript({
+    stdout: output([advisoryEvent(DEV_ONLY_ADVISORY)]),
+    status: 0,
+  });
+
+  assert.equal(result.status, 1);
+  assert.equal(
+    result.stderr.includes(
+      "Dependency audit ended without the auditSummary record (interrupted or truncated run); failing closed."
+    ),
+    true
+  );
+  assert.equal(result.stdout.includes("Dependency audit gate passed"), false);
 });
 
 test("fails closed and echoes unparseable stdout when stderr is empty", () => {

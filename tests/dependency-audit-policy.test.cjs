@@ -66,7 +66,7 @@ test("moderate and lower findings are reported separately from the high/critical
 });
 
 test("audit events are parsed line by line and unparsable lines are counted, not swallowed", () => {
-  const { events, unparsedLines } = parseAuditEvents([
+  const { events, unparsedLines, hasSummary } = parseAuditEvents([
     "not-json",
     JSON.stringify({ type: "auditAdvisory", data: { advisory: { ...baseAdvisory, findings: [devFinding] } } }),
     "",
@@ -76,12 +76,22 @@ test("audit events are parsed line by line and unparsable lines are counted, not
   assert.equal(events.length, 2);
   assert.equal(events[0].data.advisory.id, 1247710);
   assert.equal(unparsedLines, 2);
+  assert.equal(hasSummary, true, "the terminal auditSummary record must be detected");
 });
 
 test("a fully parseable audit stream reports zero skipped lines", () => {
-  const { events, unparsedLines } = parseAuditEvents([
+  const { events, unparsedLines, hasSummary } = parseAuditEvents([
     JSON.stringify({ type: "auditSummary", data: { vulnerabilities: {} } }),
   ].join("\n"));
   assert.equal(events.length, 1);
   assert.equal(unparsedLines, 0);
+  assert.equal(hasSummary, true);
+});
+
+test("a truncated audit stream without its auditSummary record is detectable", () => {
+  const { events, hasSummary } = parseAuditEvents([
+    JSON.stringify({ type: "auditAdvisory", data: { advisory: { ...baseAdvisory, findings: [devFinding] } } }),
+  ].join("\n"));
+  assert.equal(events.length, 1);
+  assert.equal(hasSummary, false, "a partial run must be distinguishable from a completed one");
 });
