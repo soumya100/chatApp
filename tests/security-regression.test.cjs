@@ -40,9 +40,60 @@ test("production dependency overrides retain the reviewed security floors", () =
 
 test("the affected picomatch@2.3.2 artifact is gone and every picomatch range resolves to the newest release", () => {
   const lock = read("yarn.lock");
-  assert.match(lock, /picomatch@[\d\^][^:]*:\s+version "4\.0\.7"/);
+  assert.match(lock, /picomatch@[\d^][^:]*:\s+version "4\.0\.7"/);
   assert.doesNotMatch(lock, /picomatch-2\.\d+\.\d+\.tgz/);
   assert.doesNotMatch(lock, /version "2\.3\.2"/);
+});
+
+test("the dependency audit gate grants no exceptions for high/critical advisories", () => {
+  const audit = read("scripts/audit-dependencies.cjs");
+  assert.doesNotMatch(audit, /EXCEPTIONS\s*=/, "the gate must not whitelist specific advisories");
+  assert.doesNotMatch(audit, /canExcept/, "no per-advisory exception pathway may exist");
+  assert.match(audit, /no exceptions are granted/);
+});
+
+test("every third-party GitHub Action is pinned to an immutable commit SHA", () => {
+  const workflowDirectory = path.join(root, ".github", "workflows");
+  const workflowFiles = fs.readdirSync(workflowDirectory).filter(file => /\.ya?ml$/.test(file));
+  assert.ok(workflowFiles.length > 0);
+  const usesLines = [];
+  for (const file of workflowFiles) {
+    const source = fs.readFileSync(path.join(workflowDirectory, file), "utf8");
+    for (const line of source.split(/\r?\n/)) {
+      if (/^\s*uses:/.test(line)) usesLines.push([file, line.trim()]);
+    }
+  }
+  assert.ok(usesLines.length > 0, "workflows must reference actions to pin");
+  for (const [file, line] of usesLines) {
+    const action = line.replace(/^uses:\s*/, "");
+    if (action.startsWith("./")) continue; // local composite actions are in-repo
+    assert.match(action, /@[0-9a-f]{40}$/, `${file}: ${action} must be pinned to a 40-char commit SHA`);
+  }
+});
+
+test("CI container images are digest-pinned and the Vercel CLI is version-pinned", () => {
+  for (const relative of [".github/workflows/chatapp-ci.yml", ".github/workflows/security.yml"]) {
+    const source = read(relative);
+    for (const image of ["ghcr.io/zaproxy/zaproxy@sha256:", "ghcr.io/gitleaks/gitleaks@sha256:"]) {
+      if (source.includes(image.split("@")[0])) {
+        assert.ok(source.includes(image), `${relative} must reference ${image.split("@")[0]} by digest`);
+      }
+    }
+    assert.doesNotMatch(source, /ghcr\.io\/[^\s]+:(latest|stable)\b/, `${relative} must not pull mutable image tags`);
+  }
+  const deploy = read(".github/workflows/deploy-production.yml");
+  assert.doesNotMatch(deploy, /vercel@latest/, "the production deploy CLI must not float on @latest");
+  assert.match(deploy, /npm install --global vercel@\d+\.\d+\.\d+/);
+});
+
+test("CI placeholder env vars are scoped to the jobs that build and run the app", () => {
+  const ci = read(".github/workflows/chatapp-ci.yml");
+  const workflowLevelEnv = ci.match(/^env:\n((?:  .*(?:\n|$))+?)^jobs:/m);
+  assert.equal(workflowLevelEnv, null, "chatapp-ci.yml must not export env vars at workflow level");
+  for (const jobName of ["build-and-browser-smoke", "vapt", "vapt-active"]) {
+    const jobBlock = ci.slice(ci.indexOf(`  ${jobName}:`));
+    assert.match(jobBlock, /^    env:/m, `${jobName} must declare its own env block`);
+  }
 });
 
 test("workflows triggered by pull requests never reference repository secrets", () => {
