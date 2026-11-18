@@ -257,10 +257,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Gitleaks secret scan
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Gitleaks secret scan (full history, tokenless)
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            --workdir /repo \
+            ghcr.io/gitleaks/gitleaks:latest \
+            detect --source . --verbose --redact
 
       - name: Review new pull-request dependencies
         if: github.event_name == 'pull_request'
