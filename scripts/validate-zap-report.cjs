@@ -21,7 +21,12 @@ function inspectReport(report) {
       throw new Error("Invalid ZAP report: site.alerts must be an array");
     }
     return (site.alerts || []).map(alert => {
-      const risk = Number(alert.riskcode ?? alert.riskCode);
+      const raw = alert.riskcode ?? alert.riskCode;
+      const risk = typeof raw === "number"
+        ? raw
+        : typeof raw === "string" && raw.trim() !== ""
+          ? Number(raw)
+          : NaN;
       if (!Number.isInteger(risk) || risk < 0 || risk > 4) {
         throw new Error("Invalid or missing ZAP alert risk code; refusing to pass an unclassified finding");
       }

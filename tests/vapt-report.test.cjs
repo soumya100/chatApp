@@ -31,7 +31,33 @@ test("ZAP high and critical findings both block release", () => {
 test("ZAP report fails closed when an alert has an invalid or missing risk code", () => {
   assert.throws(() => inspectReport({ site: [{ alerts: [{ name: "Unknown severity" }] }] }), /risk code/);
   assert.throws(() => inspectReport({ site: [{ alerts: [{ riskcode: "unknown", name: "Unknown severity" }] }] }), /risk code/);
+  assert.throws(() => inspectReport({ site: [{ alerts: [{ riskcode: "", name: "Empty severity" }] }] }), /risk code/);
+  assert.throws(() => inspectReport({ site: [{ alerts: [{ riskcode: "   ", name: "Whitespace severity" }] }] }), /risk code/);
+  assert.throws(() => inspectReport({ site: [{ alerts: [{ riskcode: null, riskCode: null, name: "Null severity" }] }] }), /risk code/);
+  assert.throws(() => inspectReport({ site: [{ alerts: [{ riskcode: false, name: "Boolean severity" }] }] }), /risk code/);
   assert.throws(() => inspectReport({ site: [{ alerts: {} }] }), /alerts must be an array/);
+});
+
+test("CLI fails closed with exit code 1 for an empty-string risk code", () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { spawnSync } = require("node:child_process");
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "zap-gate-"));
+  try {
+    const reportPath = path.join(tempDir, "zap-report.json");
+    fs.writeFileSync(reportPath, JSON.stringify({
+      site: [{ "@name": "http://localhost", alerts: [{ riskcode: "", name: "Empty Code Alert", url: "http://localhost/x" }] }],
+    }));
+    const result = spawnSync(process.execPath, [path.join(__dirname, "..", "scripts", "validate-zap-report.cjs"), reportPath], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 1, "unclassified finding must fail the gate");
+    assert.doesNotMatch(result.stdout, /ZAP gate passed/);
+    assert.match(result.stderr, /VAPT report validation failed/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("report-derived fields are sanitized before reaching CI logs", () => {
