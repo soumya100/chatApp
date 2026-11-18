@@ -1,13 +1,13 @@
 "use client"
 
-import { FC, useEffect, useState } from "react"
+import { FC, useState } from "react"
 import axios from "axios"
 import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
 import Button from "@/common/Button"
 import { resolveAdminIds } from "@/lib/group"
 import {
-  Bell, Check, Clock3, Info, Loader2, LogOut, Settings2, ShieldCheck, SlidersHorizontal, Users, X
+  Bell, Check, Clock3, Info, LogOut, Settings2, ShieldCheck, SlidersHorizontal, Users, X
 } from "lucide-react"
 import GroupPrivacySettings from "./GroupPrivacySettings"
 
@@ -64,13 +64,21 @@ const GroupSettingsModal: FC<Props> = ({ isOpen, onClose, group, sessionId, onGr
   const updateSettings = (patch: Partial<GroupSettings>) => setSettings(prev => ({ ...prev, ...patch }))
   const canSave = isAdmin && !isSaving && name.trim().length >= 2
 
-  useEffect(() => {
-    if (!isOpen) return
-    setActiveTab("general")
-    setName(group.name)
-    setDescription(group.description || "")
-    setSettings({ ...defaults, ...group.settings })
-  }, [group, isOpen])
+  // The draft resets when the dialog opens — and only then. Realtime
+  // `group_updated` events swap the group object while the dialog is open;
+  // re-deriving the draft from every incoming group object silently wiped
+  // unsaved edits and reset the active tab, so the reset instead runs on the
+  // open transition (React's adjust-state-when-a-prop-changes pattern).
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen)
+  if (prevIsOpen !== isOpen) {
+    setPrevIsOpen(isOpen)
+    if (isOpen) {
+      setActiveTab("general")
+      setName(group.name)
+      setDescription(group.description || "")
+      setSettings({ ...defaults, ...group.settings })
+    }
+  }
 
   const save = async () => {
     if (!canSave) return
