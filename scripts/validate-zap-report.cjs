@@ -4,12 +4,23 @@ function inspectReport(report) {
   if (!report || !Array.isArray(report.site)) {
     throw new Error("Unexpected ZAP JSON schema: site[] is missing");
   }
-  const findings = report.site.flatMap(site => (site.alerts || []).map(alert => ({
-    site: site["@name"] || site.name || "unknown",
-    risk: Number(alert.riskcode ?? alert.riskCode ?? 0),
-    name: alert.name || alert.alert || "Unnamed alert",
-    url: alert.url || "",
-  })));
+  const findings = report.site.flatMap(site => {
+    if (site.alerts !== undefined && !Array.isArray(site.alerts)) {
+      throw new Error("Invalid ZAP report: site.alerts must be an array");
+    }
+    return (site.alerts || []).map(alert => {
+      const risk = Number(alert.riskcode ?? alert.riskCode);
+      if (!Number.isInteger(risk) || risk < 0 || risk > 4) {
+        throw new Error("Invalid or missing ZAP alert risk code; refusing to pass an unclassified finding");
+      }
+      return {
+        site: site["@name"] || site.name || "unknown",
+        risk,
+        name: alert.name || alert.alert || "Unnamed alert",
+        url: alert.url || "",
+      };
+    });
+  });
   const blockers = findings.filter(item => item.risk >= 3);
   const byRisk = findings.reduce((counts, item) => {
     counts[item.risk] = (counts[item.risk] || 0) + 1;
