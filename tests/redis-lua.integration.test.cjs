@@ -5,7 +5,9 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
-const enabled = Boolean(process.env.REDIS_HOST || process.env.REDIS_URL);
+// These integration tests use FLUSHDB, so they only run against an explicitly
+// opted-in disposable Redis instance. Never point this at shared/production Redis.
+const enabled = Boolean(process.env.REDIS_HOST && process.env.REDIS_INTEGRATION_ALLOW_FLUSHDB === "1");
 const host = process.env.REDIS_HOST || "127.0.0.1";
 const port = process.env.REDIS_PORT || "6379";
 
