@@ -33,6 +33,8 @@ test("production dependency overrides retain the reviewed security floors", () =
   assert.ok(Number.parseInt(pkg.engines.node.match(/\d+/)?.[0] || "0", 10) >= 20);
   assert.equal(pkg.resolutions.uuid, "11.1.1");
   assert.equal(pkg.resolutions.zod, "4.6.6");
+  assert.equal(pkg.resolutions.postcss, "8.5.33");
+  assert.match(read("yarn.lock"), /postcss@8\.4\.31, postcss@\^8, postcss@\^8\.4\.47:\s+version "8\.5\.33"/);
 });
 
 test("dashboard authorization remains enforced at the middleware boundary", () => {
