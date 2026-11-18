@@ -22,8 +22,8 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState("")
   const isCreator = group.creatorId === sessionId
-  const isAdmin = (group.adminIds || [group.creatorId]).includes(sessionId)
-  const adminIds = group.adminIds || [group.creatorId]
+  const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(sessionId)
+  const adminIds = group.adminIds?.length ? group.adminIds : [group.creatorId]
 
   const loadMembers = useCallback(async () => {
     setLoading(true)
