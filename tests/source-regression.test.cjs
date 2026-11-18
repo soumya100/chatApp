@@ -126,3 +126,18 @@ test("the group settings and activity APIs use bounded validation and membership
   assert.match(pins, /message\.senderId\s*==\s*"system"\s+or\s+message\.isDeleted/);
   assert.match(privacy, /notifications:\s*z\.enum\(\["all",\s*"muted"\]\)/);
 });
+
+
+test("group message sending preserves creator permissions for legacy empty admin lists", () => {
+  const source = read("src/app/api/message/send/route.ts");
+  assert.match(source, /group\.adminIds\?\.length\s*\?\s*group\.adminIds\s*:\s*\[group\.creatorId\]/);
+  assert.match(source, /onlyAdminsCanSendMessages\s*\|\|\s*group\.settings\?\.announcementsOnly/);
+  assert.match(source, /Request body must be valid JSON/);
+});
+
+test("member invitations enforce explicit admin-approval and disabled-invite policies", () => {
+  const source = read("src/app/api/group/members/add/route.ts");
+  assert.match(source, /approvalRequired\s*&&\s*!isAdmin/);
+  assert.match(source, /allowMemberInvites\s*===\s*false/);
+  assert.match(source, /Promise\.allSettled/);
+});
