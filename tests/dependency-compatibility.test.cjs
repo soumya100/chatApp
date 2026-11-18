@@ -53,8 +53,8 @@ test("security resolutions and lockfile do not restore reported vulnerable versi
   assert.equal(packageJson.resolutions.uuid, "11.1.1");
   assert.equal(packageJson.resolutions.zod, "4.6.6");
 
-  assert.match(lockfile, /uuid@[^\\n]*:\\n  version "11\\.1\\.1"/);
-  assert.match(lockfile, /zod@[^\\n]*:\\n  version "4\\.6\\.6"/);
+  assert.match(lockfile, /uuid@[^\n]*:\n  version "11\.1\.1"/);
+  assert.match(lockfile, /zod@[^\n]*:\n  version "4\.6\.6"/);
 
   // The lockfile must not contain the exact vulnerable releases called out
   // in the dependency review.
