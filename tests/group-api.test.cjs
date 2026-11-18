@@ -7,6 +7,7 @@ const members = h.loadRoute("src/app/api/group/[groupId]/members/route.ts");
 const features = h.loadRoute("src/app/api/group/[groupId]/features/route.ts");
 const pins = h.loadRoute("src/app/api/group/[groupId]/pin/route.ts");
 const preferences = h.loadRoute("src/app/api/user/group-preferences/route.ts");
+const addMembers = h.loadRoute("src/app/api/group/members/add/route.ts");
 
 const context = { params: Promise.resolve({ groupId: "g1" }) };
 const post = (route, payload) => route.POST(h.request(payload), context);
@@ -334,4 +335,124 @@ test("group preferences: updates persist per user and GET returns defaults for a
   h.setSession("member");
   result = await read(await get(preferences, "http://localhost/api/user/group-preferences?groupId=g1"));
   assert.deepEqual(result.data.preferences, { notifications: "all", showReadReceipts: true, hideProfilePhoto: false });
+});
+
+
+test("group management: every boolean permission flag can be enabled and remains boolean", async () => {
+  const flags = [
+    "onlyAdminsCanEditInfo",
+    "onlyAdminsCanAddMembers",
+    "onlyAdminsCanSendMessages",
+    "approvalRequired",
+    "onlyAdminsCanPinMessages",
+    "onlyAdminsCanCreatePolls",
+    "onlyAdminsCanCreateEvents",
+    "announcementsOnly",
+    "allowMemberInvites",
+  ];
+  for (const flag of flags) {
+    h.reset();
+    const result = await read(await post(manage, { action: "update", settings: { [flag]: false } }));
+    assert.equal(result.status, 200, flag);
+    assert.equal(typeof result.data.group.settings[flag], "boolean", flag);
+    assert.equal(result.data.group.settings[flag], false, flag);
+  }
+});
+
+test("group management: disappearing-message retention accepts its supported boundaries", async () => {
+  for (const seconds of [0, 86400, 604800, 7776000, 31536000]) {
+    h.reset();
+    const result = await read(await post(manage, { action: "update", settings: { disappearingMessagesSeconds: seconds } }));
+    assert.equal(result.status, 200, String(seconds));
+    assert.equal(result.data.group.settings.disappearingMessagesSeconds, seconds);
+  }
+  h.reset();
+  assert.equal((await read(await post(manage, { action: "update", settings: { disappearingMessagesSeconds: 31536001 } }))).status, 400);
+  h.reset();
+  assert.equal((await read(await post(manage, { action: "update", settings: { disappearingMessagesSeconds: -1 } }))).status, 400);
+});
+
+test("legacy group with an empty adminIds array still treats its creator as admin", async () => {
+  h.reset({ group: { adminIds: [] } });
+  const updateResult = await read(await post(manage, { action: "update", settings: { announcementsOnly: true } }));
+  assert.equal(updateResult.status, 200);
+  assert.deepEqual(updateResult.data.group.adminIds, []);
+  h.setFeatures({ polls: [], events: [], announcements: [] });
+  const featureResult = await read(await post(features, { action: "createEvent", title: "Creator event", startsAt: Date.now() + 60_000 }));
+  assert.equal(featureResult.status, 200);
+});
+
+test("group features: admin-only event creation and message announcements are enforced", async () => {
+  h.reset({ group: { settings: { onlyAdminsCanCreateEvents: true, onlyAdminsCanSendMessages: true } } });
+  h.setSession("member");
+  const eventDenied = await read(await post(features, { action: "createEvent", title: "Member event", startsAt: Date.now() + 60_000 }));
+  assert.equal(eventDenied.status, 403);
+  const announcementDenied = await read(await post(features, { action: "announce", text: "Member announcement" }));
+  assert.equal(announcementDenied.status, 403);
+  h.setSession("owner");
+  const eventAllowed = await read(await post(features, { action: "createEvent", title: "Admin event", startsAt: Date.now() + 60_000 }));
+  assert.equal(eventAllowed.status, 200);
+});
+
+test("group routes reject malformed JSON with 400, not an internal server error", async () => {
+  h.reset();
+  const invalid = () => h.requestRaw("{invalid");
+  assert.equal((await read(await manage.POST(invalid(), context))).status, 400);
+  assert.equal((await read(await features.POST(invalid(), context))).status, 400);
+  assert.equal((await read(await pins.POST(invalid(), context))).status, 400);
+  assert.equal((await read(await preferences.PUT(invalid()))).status, 400);
+  assert.equal((await read(await addMembers.POST(invalid()))).status, 400);
+});
+
+test("group and activity mutations remain successful when Pusher is unavailable", async () => {
+  h.reset();
+  h.setPusherFailure(true);
+  const groupUpdate = await read(await post(manage, { action: "update", name: "Pusher down" }));
+  assert.equal(groupUpdate.status, 200);
+  const activityUpdate = await read(await post(features, { action: "createPoll", question: "Ship this?", options: ["Yes", "No"] }));
+  assert.equal(activityUpdate.status, 200);
+  const pinTestMessage = { id: "pusher-pin", senderId: "member", text: "Hello", timestamp: Date.now() };
+  h.setMessages([pinTestMessage]);
+  const pinUpdate = await read(await post(pins, { messageId: "pusher-pin", pinned: true }));
+  assert.equal(pinUpdate.status, 200);
+});
+
+test("member invitations enforce admin policy and update both membership indexes", async () => {
+  h.reset();
+  h.setUser("new-user", { name: "New User", image: "/new-user.png" });
+  h.setSession("member");
+  h.setGroup({ ...h.getGroup(), settings: { onlyAdminsCanAddMembers: true } });
+  const denied = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user"] })));
+  assert.equal(denied.status, 403);
+
+  h.setGroup({ ...h.getGroup(), settings: { allowMemberInvites: false } });
+  const invitesDisabled = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user"] })));
+  assert.equal(invitesDisabled.status, 403);
+
+  h.setGroup({ ...h.getGroup(), settings: {} });
+  h.setSession("owner");
+  const result = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user", "new-user", "member", "missing"] })));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.addedCount, 1);
+  assert.ok(result.data.group.memberIds.includes("new-user"));
+  assert.ok(h.getSetMembers("group:g1:members").includes("new-user"));
+  assert.ok(h.getSetMembers("user:new-user:groups").includes("g1"));
+  assert.ok(h.getMessages().some(message => message.senderId === "system" && message.text.includes("New User")));
+});
+
+test("member invitation returns 409 for existing members and 404 for unknown users", async () => {
+  h.reset();
+  const duplicate = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["member", "member"] })));
+  assert.equal(duplicate.status, 409);
+  const missing = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["missing"] })));
+  assert.equal(missing.status, 404);
+});
+
+test("member invitation commits successfully even if realtime delivery fails", async () => {
+  h.reset();
+  h.setUser("new-user", { name: "New User" });
+  h.setPusherFailure(true);
+  const result = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user"] })));
+  assert.equal(result.status, 200);
+  assert.ok(result.data.group.memberIds.includes("new-user"));
 });
