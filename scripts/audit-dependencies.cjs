@@ -13,6 +13,10 @@ const PROD_DEPENDENCY_ROOTS = new Set(Object.keys(pkg.dependencies || {}));
 //   release to upgrade to. Nothing is downgraded silently.
 // - unknown topology (no finding paths) is treated as production-reachable so
 //   the gate fails closed.
+// - severities outside the documented set (critical, high, moderate, low,
+//   info) BLOCK: a severity the gate cannot classify must never drift into
+//   the below-threshold path, mirroring the ZAP report gate's handling of
+//   unclassified risk codes.
 // - moderate/low/informational advisories are reported below the gate and
 //   never block.
 
@@ -38,6 +42,12 @@ const KNOWN_DEV_MITIGATIONS = [
     expiresAt: "2027-02-28",
   },
 ];
+
+// The complete set of severities the audit feed is allowed to emit. Anything
+// outside this set means the feed schema changed (or a registry/proxy
+// reshaped the records): the gate cannot know how risky the finding is, so
+// it must fail closed rather than guess.
+const KNOWN_SEVERITIES = new Set(["critical", "high", "moderate", "low", "info"]);
 
 function findingPaths(advisory) {
   const findings = Array.isArray(advisory.findings) ? advisory.findings : [];
@@ -117,9 +127,17 @@ function classifyAdvisories(advisories, now) {
   const devMitigated = [];
   const unmitigatedDevRooted = [];
   const reportedBelowThreshold = [];
+  const unclassifiable = [];
 
   for (const advisory of advisories) {
-    const severity = String(advisory.severity || "").toLowerCase();
+    const severity = String(advisory.severity ?? "").trim().toLowerCase();
+    if (!KNOWN_SEVERITIES.has(severity)) {
+      // A severity the gate cannot classify must never be reclassified as
+      // "below threshold": that would silently pass an advisory whose risk
+      // is unknown (fail-open). It gets its own blocking bucket instead.
+      unclassifiable.push({ advisory, severity: severity || "(missing)" });
+      continue;
+    }
     if (severity !== "high" && severity !== "critical") {
       reportedBelowThreshold.push(advisory);
       continue;
@@ -139,7 +157,7 @@ function classifyAdvisories(advisories, now) {
     }
   }
 
-  return { blocking, devMitigated, unmitigatedDevRooted, reportedBelowThreshold };
+  return { blocking, devMitigated, unmitigatedDevRooted, reportedBelowThreshold, unclassifiable };
 }
 
 // Parses Yarn's line-delimited JSON audit output. Unparsable lines are
@@ -233,6 +251,15 @@ function runAudit() {
     );
   }
 
+  for (const { advisory, severity } of classified.unclassifiable) {
+    console.error(
+      `UNCLASSIFIABLE ADVISORY (blocking): ${advisory.id}: ${advisory.module_name} carries severity ` +
+      `${JSON.stringify(severity)} which is outside the known set (critical, high, moderate, low, info). ` +
+      `The gate fails closed instead of guessing; fix the advisory record or re-run yarn audit. ` +
+      `${advisory.url || "no advisory URL"}`
+    );
+  }
+
   const belowThresholdCounts = classified.reportedBelowThreshold.reduce((counts, advisory) => {
     const severity = String(advisory.severity || "unknown").toLowerCase();
     counts[severity] = (counts[severity] || 0) + 1;
@@ -247,13 +274,20 @@ function runAudit() {
     );
   }
 
-  if (classified.blocking.length || classified.unmitigatedDevRooted.length) {
+  if (
+    classified.blocking.length ||
+    classified.unmitigatedDevRooted.length ||
+    classified.unclassifiable.length
+  ) {
     console.error("High/critical dependency advisories are blocking the gate (production-reachable findings grant no exceptions):");
     for (const { advisory } of classified.blocking) {
       console.error(`- ${uniqueAdvisory(advisory)} (production-reachable): ${advisory.url || "no advisory URL"}`);
     }
     for (const { advisory } of classified.unmitigatedDevRooted) {
       console.error(`- ${uniqueAdvisory(advisory)} (dev-root, unregistered): ${advisory.url || "no advisory URL"}`);
+    }
+    for (const { advisory, severity } of classified.unclassifiable) {
+      console.error(`- ${advisory.id}: ${advisory.module_name} (unrecognized severity ${JSON.stringify(severity)}): ${advisory.url || "no advisory URL"}`);
     }
     process.exitCode = 1;
     return;

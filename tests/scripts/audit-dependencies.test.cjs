@@ -169,6 +169,41 @@ test("an unregistered dev-root high advisory blocks with exit code 1", () => {
   assert.equal(result.stdout.includes("Dependency audit gate passed"), false);
 });
 
+test("advisories with a missing or unrecognized severity fail closed instead of passing", () => {
+  // A feed schema change (or a reshaping proxy) must never downgrade a
+  // finding the gate cannot classify into the below-threshold path.
+  const missing = runAuditScript({
+    stdout: output([
+      advisoryEvent({
+        id: 424242,
+        module_name: "left-pad",
+        url: "https://www.npmjs.com/advisories/424242",
+        findings: [{ version: "1.3.0", paths: ["tailwindcss>left-pad"] }],
+      }),
+      summaryEvent(),
+    ]),
+    status: 0,
+  });
+
+  assert.equal(missing.status, 1);
+  assert.equal(missing.stderr.includes("UNCLASSIFIABLE ADVISORY (blocking)"), true);
+  assert.equal(missing.stderr.includes("(missing)"), true);
+  assert.equal(missing.stdout.includes("Dependency audit gate passed"), false);
+
+  const unrecognized = runAuditScript({
+    stdout: output([
+      advisoryEvent({ ...UNREGISTERED_DEV_ADVISORY, severity: "severe" }),
+      summaryEvent(),
+    ]),
+    status: 0,
+  });
+
+  assert.equal(unrecognized.status, 1);
+  assert.equal(unrecognized.stderr.includes('"severe"'), true);
+  assert.equal(unrecognized.stderr.includes("(unrecognized severity"), true);
+  assert.equal(unrecognized.stdout.includes("Dependency audit gate passed"), false);
+});
+
 test("production-reachable high/critical advisories fail the gate with exit code 1", () => {
   const result = runAuditScript({
     stdout: output([

@@ -102,6 +102,37 @@ test("moderate and lower findings are reported separately from the high/critical
   assert.equal(result.devMitigated.length, 0);
   assert.equal(result.unmitigatedDevRooted.length, 0);
   assert.equal(result.reportedBelowThreshold.length, 3);
+  assert.equal(result.unclassifiable.length, 0);
+});
+
+test("a missing, empty or unrecognized severity fails closed instead of passing as below-threshold", () => {
+  for (const severity of [undefined, "", "   ", "severe", "high-risk"]) {
+    const result = classifyAdvisories(
+      [{ ...picomatchAdvisory, severity, findings: [devFinding] }],
+      NOW
+    );
+    assert.equal(
+      result.unclassifiable.length, 1,
+      `severity ${JSON.stringify(severity)} must land in the unclassifiable bucket`
+    );
+    assert.equal(result.reportedBelowThreshold.length, 0, "an unclassifiable advisory must never be reported as below-threshold");
+    assert.equal(result.blocking.length, 0, "unclassifiable advisories carry their own blocking bucket");
+    assert.equal(result.devMitigated.length, 0, "an advisory the gate cannot classify must not pass through a mitigation");
+  }
+  const missing = classifyAdvisories([{ ...picomatchAdvisory, severity: undefined, findings: [devFinding] }], NOW);
+  assert.equal(missing.unclassifiable[0].severity, "(missing)");
+});
+
+test("case and whitespace variants of documented severities are normalized, not rejected", () => {
+  const result = classifyAdvisories(
+    [
+      { ...picomatchAdvisory, severity: "HIGH", findings: [devFinding] },
+      { ...picomatchAdvisory, severity: " Critical ", findings: [devFinding] },
+    ],
+    NOW
+  );
+  assert.equal(result.devMitigated.length, 2);
+  assert.equal(result.unclassifiable.length, 0);
 });
 
 test("critical severities follow the same policy as high", () => {
