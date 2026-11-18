@@ -36,7 +36,13 @@ export async function PUT(req: Request) {
   const session = await getServerSession(authOptions)
   const userId = session?.user?.id
   if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
-  const parsed = schema.safeParse(await req.json())
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return Response.json({ message: "Request body must be valid JSON" }, { status: 400 })
+  }
+  const parsed = schema.safeParse(body)
   if (!parsed.success) return Response.json({ message: "Invalid preference payload" }, { status: 400 })
   const { groupId, ...changes } = parsed.data
   const rawGroup = await db.get(`group:${groupId}`)
