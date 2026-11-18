@@ -48,7 +48,12 @@ async function isValidReplyTarget(chatId: string, replyTo?: { id: string }) {
 export async function POST(req: Request) {
     let operation = 'parse request'
     try {
-        const body = await req.json()
+        let body: unknown
+        try {
+            body = await req.json()
+        } catch {
+            return new Response('Request body must be valid JSON', { status: 400 })
+        }
         const payload = sendMessagePayloadValidator.parse(body)
         const { text, chatId } = payload
 
@@ -87,7 +92,7 @@ export async function POST(req: Request) {
             const groupRaw = await db.get(`group:${groupId}`)
             if (!groupRaw) return new Response('Group not found', { status: 404 })
             const group = (typeof groupRaw === 'string' ? JSON.parse(groupRaw) : groupRaw) as Group
-            const isAdmin = (group.adminIds || [group.creatorId]).includes(session.user.id)
+            const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(session.user.id)
             if ((group.settings?.onlyAdminsCanSendMessages || group.settings?.announcementsOnly) && !isAdmin) {
                 return new Response('Only group admins can send messages', { status: 403 })
             }
