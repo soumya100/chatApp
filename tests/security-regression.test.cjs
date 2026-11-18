@@ -30,7 +30,7 @@ test("uploaded user media is not committed into the public source tree", () => {
 
 test("production dependency overrides retain the reviewed security floors", () => {
   const pkg = JSON.parse(read("package.json"));
-  assert.ok(Number.parseInt(pkg.engines.node.replace(/[^0-9].*$/, ""), 10) >= 20);
+  assert.ok(Number.parseInt(pkg.engines.node.match(/\d+/)?.[0] || "0", 10) >= 20);
   assert.equal(pkg.resolutions.uuid, "11.1.1");
   assert.equal(pkg.resolutions.zod, "4.6.6");
 });
@@ -39,7 +39,7 @@ test("dashboard authorization remains enforced at the middleware boundary", () =
   const middleware = read("src/middleware.ts");
   assert.match(middleware, /withAuth/);
   assert.match(middleware, /getToken\(\{\s*req\s*\}\)/);
-  assert.match(middleware, /pathname\.startsWith\(['"]\/dashboard['"]\)/);
+  assert.match(middleware, /sensitiveRoutes\.some\(\(route\) => pathname\.startsWith\(route\)\)/);
   assert.match(middleware, /matcher:\s*\[.*\/dashboard\/:path\*/s);
 });
 
