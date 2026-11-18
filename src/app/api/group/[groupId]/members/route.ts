@@ -1,5 +1,6 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { groupPreferencesKey, parseStoredGroupPreferences } from "@/lib/group-preferences"
 import { getServerSession } from "next-auth"
 
 export const dynamic = "force-dynamic"
@@ -23,37 +24,58 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
     const pipeline = db.pipeline()
     memberIds.forEach(id => pipeline.get(`user:${id}`))
     const preferencesPipeline = db.pipeline()
-    memberIds.forEach(id => preferencesPipeline.get(`user:${id}:group-preferences:${groupId}`))
+    memberIds.forEach(id => preferencesPipeline.get(groupPreferencesKey(id, groupId)))
     const [rawUsers, rawPreferences] = await Promise.all([pipeline.exec(), preferencesPipeline.exec()])
 
     // Mirror the server-side privacy rule used by message broadcast/history:
     // a member who sets hideProfilePhoto in this group never exposes their photo.
+    // The rule fails closed: when a member's preference record cannot be decoded
+    // we cannot prove they opted into being visible, so their photo is hidden.
     const hiddenPhotoIds = new Set<string>()
+    let unreadablePreferences = 0
     rawPreferences.forEach((raw, index) => {
-      try {
-        const preferences = typeof raw === "string" ? JSON.parse(raw) : raw
-        if (preferences?.hideProfilePhoto) hiddenPhotoIds.add(memberIds[index])
-      } catch (error) {
-        console.error(`Failed to load group preferences for member ${memberIds[index]} in group ${groupId}:`, error)
+      const memberId = memberIds[index]
+      const stored = parseStoredGroupPreferences(raw)
+      if (stored.status === "corrupt") {
+        unreadablePreferences += 1
+        hiddenPhotoIds.add(memberId)
+        return
       }
+      if (stored.preferences.hideProfilePhoto) hiddenPhotoIds.add(memberId)
     })
 
+    let unreadableProfiles = 0
     const members = memberIds.map((id, index) => {
+      const raw = rawUsers[index]
       let user: User | null = null
-      try {
-        const raw = rawUsers[index]
-        user = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) as User : null
-      } catch (error) {
-        console.error(`Failed to load profile for group member ${id} in group ${groupId}:`, error)
+      if (raw != null) {
+        try {
+          user = (typeof raw === "string" ? JSON.parse(raw) : raw) as User
+        } catch {
+          unreadableProfiles += 1
+        }
       }
       return { id, name: user?.name || "Group member", image: hiddenPhotoIds.has(id) ? "" : user?.image || "" }
     })
+
+    // Degraded records are counted and surfaced to the caller and the logs.
+    // Log lines carry counts only — never member or group identifiers.
+    if (unreadablePreferences || unreadableProfiles) {
+      console.error(
+        `Group member directory degraded: ${unreadablePreferences} preference record(s) and ` +
+        `${unreadableProfiles} profile record(s) could not be decoded; affected photos are hidden.`
+      )
+    }
 
     return Response.json({
       members,
       creatorId: group.creatorId,
       adminIds: group.adminIds?.length ? group.adminIds : [group.creatorId],
-      memberCount: members.length
+      memberCount: members.length,
+      degraded: {
+        unreadablePreferences,
+        unreadableProfiles
+      }
     })
   } catch (error) {
     console.error("Group members read failed:", error)

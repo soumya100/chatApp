@@ -1,5 +1,6 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { groupPreferencesKey, parseStoredGroupPreferences } from "@/lib/group-preferences"
 import { messageValidator } from "@/lib/validations/message"
 import { getServerSession } from "next-auth"
 import { z } from "zod"
@@ -82,14 +83,16 @@ export async function GET(req: Request) {
             const senderIds = Array.from(new Set(messages.map(message => message.senderId).filter(id => id !== "system")))
             if (senderIds.length) {
                 const preferencesPipeline = db.pipeline()
-                senderIds.forEach(senderId => preferencesPipeline.get(`user:${senderId}:group-preferences:${groupId}`))
+                senderIds.forEach(senderId => preferencesPipeline.get(groupPreferencesKey(senderId, groupId)))
                 const preferenceRows = await preferencesPipeline.exec()
                 const hiddenSenders = new Set<string>()
                 preferenceRows.forEach((raw, index) => {
-                    try {
-                        const preferences = typeof raw === "string" ? JSON.parse(raw) : raw
-                        if (preferences?.hideProfilePhoto) hiddenSenders.add(senderIds[index])
-                    } catch {}
+                    const stored = parseStoredGroupPreferences(raw)
+                    // Fail closed: an undecodable preference record must not
+                    // expose a photo the sender may have wanted hidden.
+                    if (stored.status === "corrupt" || stored.preferences.hideProfilePhoto) {
+                        hiddenSenders.add(senderIds[index])
+                    }
                 })
                 messages.forEach(message => {
                     if (hiddenSenders.has(message.senderId)) message.senderImg = undefined

@@ -1,5 +1,6 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { groupPreferencesKey, groupPreferencesOrDefault } from "@/lib/group-preferences"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
 import { getServerSession } from "next-auth"
@@ -25,8 +26,8 @@ export async function POST(req: Request) {
             const isMember = await db.sismember(`group:${groupId}:members`, session.user.id)
             if (!isMember) return new Response('Forbidden', { status: 403 })
             await db.hdel(`user:${session.user.id}:unread`, chatId)
-            const rawPreferences = await db.get(`user:${session.user.id}:group-preferences:${groupId}`)
-            const preferences = (typeof rawPreferences === 'string' ? JSON.parse(rawPreferences) : rawPreferences) || {}
+            const rawPreferences = await db.get(groupPreferencesKey(session.user.id, groupId))
+            const preferences = groupPreferencesOrDefault(rawPreferences)
             if (preferences.showReadReceipts === false) return new Response('OK')
         } else {
             const ids = chatId.split('--')

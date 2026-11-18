@@ -57,14 +57,17 @@ test("group member listing: members who hide their profile photo never expose it
   assert.equal(byId.owner.image, "/owner.png", "other members keep their photos");
 });
 
-test("group member listing: unreadable preference records do not break the directory", async () => {
+test("group member listing: unreadable preference records fail closed and are surfaced", async () => {
   h.reset({ group: { memberIds: ["owner", "member"] } });
   h.seedKv("user:member:group-preferences:g1", "corrupt-not-json{{{");
   const result = await read(await get(members));
   assert.equal(result.status, 200);
   const byId = Object.fromEntries(result.data.members.map(member => [member.id, member]));
-  assert.equal(byId.member.name, "Member");
-  assert.equal(byId.member.image, "/member.png");
+  assert.equal(byId.member.name, "Member", "the name stays visible; only the photo is private");
+  assert.equal(byId.member.image, "", "an undecodable preference must hide the photo, not expose it");
+  assert.equal(byId.owner.image, "/owner.png", "readable records keep the normal behavior");
+  assert.equal(result.data.degraded.unreadablePreferences, 1, "degraded records are surfaced to the caller");
+  assert.equal(result.data.degraded.unreadableProfiles, 0);
 });
 
 test("group management: unauthenticated and malformed requests fail closed", async () => {
@@ -485,4 +488,25 @@ test("member invitation commits successfully even if realtime delivery fails", a
   const result = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user"] })));
   assert.equal(result.status, 200);
   assert.ok(result.data.group.memberIds.includes("new-user"));
+});
+
+test("member invitation retries when the group document changes concurrently and still commits", async () => {
+  h.reset();
+  h.setUser("new-user", { name: "New User" });
+  h.forceRedisConflicts(2);
+  const result = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user"] })));
+  assert.equal(result.status, 200, "bounded CAS retries must absorb concurrent updates");
+  assert.ok(result.data.group.memberIds.includes("new-user"));
+  assert.ok(h.getSetMembers("group:g1:members").includes("new-user"));
+});
+
+test("member invitation gives up with 409 when conflicts never resolve", async () => {
+  h.reset();
+  h.setUser("new-user", { name: "New User" });
+  h.forceRedisConflicts(10);
+  const result = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user"] })));
+  assert.equal(result.status, 409);
+  assert.match(result.data.message, /concurrently/i);
+  assert.equal(h.getGroup().memberIds.includes("new-user"), false, "no partial membership may be committed");
+  assert.equal(h.getSetMembers("group:g1:members").includes("new-user"), false);
 });
