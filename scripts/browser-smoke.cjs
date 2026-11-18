@@ -51,22 +51,27 @@ async function togglePasswordVisibility(page, selector, reveal, engine) {
 }
 
 async function submitSignupExpecting(page, engine, fill, expectedText) {
-  // React hydrates after the first paint, and a submit delivered before
-  // hydration completes falls through to a native form POST that reloads the
-  // page and clears every field — so the client-side validation message can
-  // never appear on a single racy click. The submission is therefore retried
-  // within a bounded window, re-filling all fields on every attempt.
-  const deadline = Date.now() + 45_000;
+  // React hydrates after the first paint, and a Create Account click
+  // delivered before hydration completes falls through to a native form
+  // submission that reloads the page and clears every field. Clicking again
+  // immediately would keep reloading the page before it ever hydrates, so
+  // every attempt waits for the page to settle (network idle plus a grace
+  // period) before interacting, and the submission is retried within a
+  // bounded window.
+  const deadline = Date.now() + 90_000;
   let lastError = "";
-  while (Date.now() < deadline) {
+  for (;;) {
+    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+    await page.waitForTimeout(2_500);
     await fill(page);
     await page.getByRole("button", { name: "Create Account" }).click();
     try {
-      await page.getByText(expectedText).waitFor({ timeout: 3_000 });
+      await page.getByText(expectedText).waitFor({ timeout: 5_000 });
       return;
     } catch (error) {
       lastError = error.message;
     }
+    if (Date.now() > deadline) break;
   }
   assert.fail(`${engine}: signup validation message "${expectedText}" never appeared: ${lastError}`);
 }
