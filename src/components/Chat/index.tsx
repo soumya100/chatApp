@@ -392,7 +392,7 @@ const Chat: FC<ChatProps> = ({
           isOpen={isGroupFeaturesOpen}
           onClose={() => setIsGroupFeaturesOpen(false)}
           groupId={groupId}
-          isAdmin={(group.adminIds || [group.creatorId]).includes(sessionId)}
+          isAdmin={(group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(sessionId)}
         />
       )}
 
