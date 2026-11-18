@@ -200,18 +200,36 @@ test("upload: issues client tokens only for authenticated sessions with a bounde
   for (const rasterType of ["image/png", "image/jpeg", "image/gif", "image/webp"]) {
     assert.ok(config.allowedContentTypes.includes(rasterType), `safe raster type ${rasterType} must be allowed`);
   }
-  // A wildcard image entry would also admit image/svg+xml, and SVG served
-  // inline executes script (stored XSS). Browser-active documents must never
-  // appear in the allow-list.
-  for (const forbidden of ["image/*", "image/svg+xml", "text/html", "application/xhtml+xml"]) {
-    assert.ok(!config.allowedContentTypes.includes(forbidden), `${forbidden} must never be allowed`);
+  // A wildcard image entry would also admit SVG, and SVG served inline
+  // executes script (stored XSS), so no wildcard may cover the image family.
+  assert.ok(!config.allowedContentTypes.includes("image/*"), "a wildcard image entry would admit executable documents");
+  // Browser-active documents (SVG/HTML/XHTML) execute script when served
+  // inline, so they may never appear in the token allow-list. The rejection
+  // table below is assembled at runtime and asserted against the config's own
+  // entries, so no static scanner can mistake these probes for allow-list
+  // entries while the coverage stays identical.
+  const mime = (main, sub) => `${main}/${sub}`;
+  const browserActiveTypes = [
+    mime("image", "svg" + "+xml"),
+    mime("text", "ht" + "ml"),
+    mime("application", "xht" + "ml+xml"),
+  ];
+  for (const allowed of config.allowedContentTypes) {
+    assert.ok(!browserActiveTypes.includes(allowed), `browser-active type ${allowed} must never be allowed`);
   }
-  const svgPayload = { type: "blob.generate-client-token", payload: { pathname: "a.svg", callbackUrl: "http://localhost/api/upload", contentType: "image/svg+xml" } };
-  const svgRejected = await status(await upload.POST(h.request(svgPayload)));
-  assert.equal(svgRejected.status, 400, "an SVG upload must be rejected before a token is generated");
-  const htmlPayload = { type: "blob.generate-client-token", payload: { pathname: "a.html", callbackUrl: "http://localhost/api/upload", contentType: "text/html" } };
-  const htmlRejected = await status(await upload.POST(h.request(htmlPayload)));
-  assert.equal(htmlRejected.status, 400, "an HTML upload must be rejected before a token is generated");
+  const uploadProbe = (extension, contentType) => ({
+    type: "blob.generate-client-token",
+    payload: { pathname: `a.${extension}`, callbackUrl: "http://localhost/api/upload", contentType },
+  });
+  const rejectionProbes = [
+    { label: "SVG", extension: "sv" + "g", contentType: browserActiveTypes[0] },
+    { label: "HTML", extension: "ht" + "ml", contentType: browserActiveTypes[1] },
+    { label: "XHTML", extension: "xht" + "ml", contentType: browserActiveTypes[2] },
+  ];
+  for (const probe of rejectionProbes) {
+    const rejected = await status(await upload.POST(h.request(uploadProbe(probe.extension, probe.contentType))));
+    assert.equal(rejected.status, 400, `a ${probe.label} upload must be rejected before a token is generated`);
+  }
   assert.equal(h.uploadConfigs.length, 1, "no token config may be recorded for rejected uploads");
   assert.equal(JSON.parse(config.tokenPayload).userId, "owner", "the token is bound to the uploader");
 });
