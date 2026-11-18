@@ -21,6 +21,15 @@ test("group member listing: unauthenticated access is rejected", async () => {
   assert.equal(result.data.message, "Unauthorized");
 });
 
+test("group member listing: malformed group ids are rejected before any Redis access", async () => {
+  h.reset();
+  for (const badId of ["", "x".repeat(129)]) {
+    const result = await read(await members.GET(h.request(undefined, "GET"), { params: Promise.resolve({ groupId: badId }) }));
+    assert.equal(result.status, 400, `a group id of length ${badId.length} must be rejected with a deterministic 400`);
+    assert.equal(result.data.message, "Invalid group id");
+  }
+});
+
 test("group member listing: non-members cannot enumerate profiles", async () => {
   const group = h.reset({ group: { memberIds: ["owner", "admin"] } });
   h.setSession("outsider");
@@ -452,10 +461,16 @@ test("member invitations enforce admin policy and update both membership indexes
   h.setGroup({ ...h.getGroup(), settings: { allowMemberInvites: false } });
   const invitesDisabled = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user"] })));
   assert.equal(invitesDisabled.status, 403);
+  // Machine-readable policy codes let the UI distinguish the two 403 shapes
+  // and explain the group's rule instead of a generic failure.
+  assert.equal(invitesDisabled.data.code, "MEMBER_ADD_ADMIN_ONLY");
+  assert.equal(invitesDisabled.data.message, "Only group admins can add members");
 
   h.setGroup({ ...h.getGroup(), settings: { approvalRequired: true } });
   const approvalRequired = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user"] })));
   assert.equal(approvalRequired.status, 403);
+  assert.equal(approvalRequired.data.code, "ADMIN_APPROVAL_REQUIRED");
+  assert.equal(approvalRequired.data.message, "A group admin must approve new members");
 
   h.setGroup({ ...h.getGroup(), settings: { approvalRequired: true } });
   h.setSession("owner");

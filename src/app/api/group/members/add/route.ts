@@ -1,5 +1,6 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { resolveAdminIds } from "@/lib/group"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
 import { getServerSession } from "next-auth"
@@ -84,12 +85,18 @@ export async function POST(req: Request) {
             const isMember = existingMemberIds.includes(session.user.id)
             if (!isMember) return Response.json({ message: "You are not a member of this group" }, { status: 403 })
 
-            const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(session.user.id)
+            const isAdmin = resolveAdminIds(group).includes(session.user.id)
             if (group.settings?.approvalRequired && !isAdmin) {
-                return Response.json({ message: "A group admin must approve new members" }, { status: 403 })
+                return Response.json(
+                    { message: "A group admin must approve new members", code: "ADMIN_APPROVAL_REQUIRED" },
+                    { status: 403 }
+                )
             }
             if ((group.settings?.onlyAdminsCanAddMembers || group.settings?.allowMemberInvites === false) && !isAdmin) {
-                return Response.json({ message: "Only group admins can add members" }, { status: 403 })
+                return Response.json(
+                    { message: "Only group admins can add members", code: "MEMBER_ADD_ADMIN_ONLY" },
+                    { status: 403 }
+                )
             }
 
             const uniqueIds = Array.from(new Set(memberIds)).filter(id => !existingMemberIds.includes(id))

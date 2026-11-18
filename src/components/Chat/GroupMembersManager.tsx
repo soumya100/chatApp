@@ -5,6 +5,7 @@ import axios from "axios"
 import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
 import { Avatar, Button } from "@/common"
+import { resolveAdminIds } from "@/lib/group"
 import { Crown, Loader2, Search, Shield, ShieldOff, UserMinus, Users, X } from "lucide-react"
 
 interface MemberProfile { id: string; name: string; image?: string }
@@ -23,8 +24,8 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
   const [loadError, setLoadError] = useState(false)
   const [query, setQuery] = useState("")
   const isCreator = group.creatorId === sessionId
-  const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(sessionId)
-  const adminIds = group.adminIds?.length ? group.adminIds : [group.creatorId]
+  const adminIds = resolveAdminIds(group)
+  const isAdmin = adminIds.includes(sessionId)
 
   const loadMembers = useCallback(async () => {
     setLoading(true)

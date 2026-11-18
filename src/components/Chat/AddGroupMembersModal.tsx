@@ -30,6 +30,7 @@ const AddGroupMembersModal: FC<AddGroupMembersModalProps> = ({
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [policyError, setPolicyError] = useState<string | null>(null)
 
   // Fetch friends list on modal open
   useEffect(() => {
@@ -37,6 +38,7 @@ const AddGroupMembersModal: FC<AddGroupMembersModalProps> = ({
       setIsLoadingFriends(true)
       setSelectedFriendIds([])
       setSearchQuery("")
+      setPolicyError(null)
       axios
         .get<User[]>("/api/friends/list")
         .then((res) => {
@@ -96,7 +98,20 @@ const AddGroupMembersModal: FC<AddGroupMembersModalProps> = ({
       }
     } catch (err: any) {
       console.error("Add members error:", err)
-      toast.error(err?.response?.data?.message || "Failed to add members to group")
+      // A policy rejection (approval required, member invites disabled) is
+      // surfaced inline so the member sees the group's rule, not a generic
+      // failure toast.
+      if (err?.response?.status === 403) {
+        setPolicyError(
+          err?.response?.data?.code === "ADMIN_APPROVAL_REQUIRED"
+            ? "A group admin has to approve and add new members in this group."
+            : err?.response?.data?.code === "MEMBER_ADD_ADMIN_ONLY"
+              ? "Only group admins can add members to this group."
+              : err?.response?.data?.message || "You are not allowed to add members here."
+        )
+      } else {
+        toast.error(err?.response?.data?.message || "Failed to add members to group")
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -152,6 +167,16 @@ const AddGroupMembersModal: FC<AddGroupMembersModalProps> = ({
                     </p>
                   </div>
                 </div>
+
+                {/* Policy rejection banner */}
+                {policyError && (
+                  <div
+                    role="alert"
+                    className="mt-2 mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200"
+                  >
+                    {policyError}
+                  </div>
+                )}
 
                 {/* Friend Search Bar */}
                 {availableFriends.length > 0 && (

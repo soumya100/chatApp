@@ -1,6 +1,7 @@
 import { fetchRedis } from "@/helpers/redis"
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { resolveAdminIds } from "@/lib/group"
 import { groupPreferencesKey, groupPreferencesOrDefault } from "@/lib/group-preferences"
 import { getServerSession } from "next-auth"
 import { nanoid } from 'nanoid'
@@ -93,7 +94,7 @@ export async function POST(req: Request) {
             const groupRaw = await db.get(`group:${groupId}`)
             if (!groupRaw) return new Response('Group not found', { status: 404 })
             const group = (typeof groupRaw === 'string' ? JSON.parse(groupRaw) : groupRaw) as Group
-            const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(session.user.id)
+            const isAdmin = resolveAdminIds(group).includes(session.user.id)
             if ((group.settings?.onlyAdminsCanSendMessages || group.settings?.announcementsOnly) && !isAdmin) {
                 return new Response('Only group admins can send messages', { status: 403 })
             }

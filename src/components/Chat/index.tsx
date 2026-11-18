@@ -5,6 +5,7 @@ import Messages from './Messages'
 import ChatInput from './ChatInput'
 import { pusherClient } from '@/lib/pusher'
 import { toPusherKey } from '@/lib/utils'
+import { memberInvitesAllowed, resolveAdminIds } from '@/lib/group'
 import { Search, UserPlus, X, Settings as SettingsIcon, Sparkles, Users } from 'lucide-react'
 import axios from 'axios'
 import { nanoid } from 'nanoid'
@@ -291,8 +292,9 @@ const Chat: FC<ChatProps> = ({
               <SettingsIcon size={18} />
             </button>
           )}
-          {/* Add Friends to Group Button */}
-          {isGroupChat && (
+          {/* Add Friends to Group Button - hidden when the group's policy
+              restricts invitations, so members never hit a dead-end 403 */}
+          {isGroupChat && group && memberInvitesAllowed(group, sessionId) && (
             <button
               onClick={() => setIsAddMembersModalOpen(true)}
               className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-medium text-xs border border-indigo-200 dark:border-indigo-800 transition shadow-2xs'
@@ -392,7 +394,7 @@ const Chat: FC<ChatProps> = ({
           isOpen={isGroupFeaturesOpen}
           onClose={() => setIsGroupFeaturesOpen(false)}
           groupId={groupId}
-          isAdmin={(group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(sessionId)}
+          isAdmin={resolveAdminIds(group).includes(sessionId)}
         />
       )}
 

@@ -1,5 +1,6 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { resolveAdminIds } from "@/lib/group"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
 import { getServerSession } from "next-auth"
@@ -120,7 +121,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
     if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
 
     const action = parsed.data.action
-    const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(userId)
+    const isAdmin = resolveAdminIds(group).includes(userId)
     const adminOnly = (action === "createPoll" && group.settings?.onlyAdminsCanCreatePolls) ||
       (action === "createEvent" && group.settings?.onlyAdminsCanCreateEvents) ||
       (action === "announce" && (group.settings?.announcementsOnly || group.settings?.onlyAdminsCanSendMessages))

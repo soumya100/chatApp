@@ -1,5 +1,6 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { resolveAdminIds } from "@/lib/group"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
 import { getServerSession } from "next-auth"
@@ -102,7 +103,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
             const expectedRaw = typeof raw === "string" ? raw : JSON.stringify(raw)
             const group = decode<Group>(raw)
             const memberIds = group.memberIds || []
-            const adminIds = group.adminIds?.length ? group.adminIds : [group.creatorId]
+            const adminIds = resolveAdminIds(group)
             const isMember = memberIds.includes(actorId)
             const isAdmin = adminIds.includes(actorId)
             if (!isMember) return Response.json({ message: "You are not a member of this group" }, { status: 403 })

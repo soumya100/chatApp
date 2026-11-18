@@ -1,9 +1,15 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { resolveAdminIds } from "@/lib/group"
 import { groupPreferencesKey, parseStoredGroupPreferences } from "@/lib/group-preferences"
 import { getServerSession } from "next-auth"
+import { z } from "zod"
 
 export const dynamic = "force-dynamic"
+
+// Mirrors the bounded-string validation the other group routes apply before
+// any Redis key is built from a caller-controlled segment.
+const groupIdSchema = z.string().min(1).max(128)
 
 export async function GET(_req: Request, { params }: { params: Promise<{ groupId: string }> }) {
   try {
@@ -12,6 +18,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
     if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
 
     const { groupId } = await params
+    if (!groupIdSchema.safeParse(groupId).success) {
+        return Response.json({ message: "Invalid group id" }, { status: 400 })
+    }
     const rawGroup = await db.get(`group:${groupId}`)
     if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
 
@@ -70,7 +79,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
     return Response.json({
       members,
       creatorId: group.creatorId,
-      adminIds: group.adminIds?.length ? group.adminIds : [group.creatorId],
+      adminIds: resolveAdminIds(group),
       memberCount: members.length,
       degraded: {
         unreadablePreferences,
@@ -78,7 +87,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
       }
     })
   } catch (error) {
-    console.error("Group members read failed:", error)
-    return Response.json({ message: "Unable to load group members" }, { status: 500 })
+    // A stable failure code instead of the error instance: Redis/parse errors
+    // embed key names and stored-record fragments that must never reach logs.
+    const failureCode = error instanceof Error ? error.name : "UnknownError"
+    console.error("Group members read failed:", failureCode)
+    return Response.json({ message: "Unable to load group members", code: "MEMBERS_READ_FAILED" }, { status: 500 })
   }
 }

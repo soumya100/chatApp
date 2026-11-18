@@ -5,6 +5,7 @@ import axios from "axios"
 import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
 import { Button } from "@/common"
+import { resolveAdminIds } from "@/lib/group"
 import {
   Bell, Check, Clock3, Info, Loader2, LogOut, Settings2, ShieldCheck, SlidersHorizontal, Users, X
 } from "lucide-react"
@@ -53,7 +54,7 @@ const tabs: { id: SettingsTab; label: string; icon: typeof Info }[] = [
 ]
 
 const GroupSettingsModal: FC<Props> = ({ isOpen, onClose, group, sessionId, onGroupUpdated, onLeave }) => {
-  const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(sessionId)
+  const isAdmin = resolveAdminIds(group).includes(sessionId)
   const [activeTab, setActiveTab] = useState<SettingsTab>("general")
   const [name, setName] = useState(group.name)
   const [description, setDescription] = useState(group.description || "")

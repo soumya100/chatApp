@@ -130,7 +130,10 @@ test("the group settings and activity APIs use bounded validation and membership
 
 test("group message sending preserves creator permissions for legacy empty admin lists", () => {
   const source = read("src/app/api/message/send/route.ts");
-  assert.match(source, /group\.adminIds\?\.length\s*\?\s*group\.adminIds\s*:\s*\[group\.creatorId\]/);
+  // The legacy fallback (empty adminIds -> creator administers) lives in the
+  // shared resolveAdminIds helper; every group route must derive admins there.
+  assert.match(source, /resolveAdminIds\(group\)\.includes\(session\.user\.id\)/);
+  assert.match(read("src/lib/group.ts"), /group\.adminIds\?\.length\s*\?\s*group\.adminIds\s*:\s*\[group\.creatorId\]/);
   assert.match(source, /onlyAdminsCanSendMessages\s*\|\|\s*group\.settings\?\.announcementsOnly/);
   assert.match(source, /Request body must be valid JSON/);
 });

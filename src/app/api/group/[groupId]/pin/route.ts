@@ -1,5 +1,6 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { resolveAdminIds } from "@/lib/group"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
 import { getServerSession } from "next-auth"
@@ -55,7 +56,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
     if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
     const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
     if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
-    const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(userId)
+    const isAdmin = resolveAdminIds(group).includes(userId)
     if (group.settings?.onlyAdminsCanPinMessages && !isAdmin) return Response.json({ message: "Only admins can pin messages" }, { status: 403 })
 
     const key = `chat:group--${groupId}:messages`
