@@ -39,7 +39,7 @@ export async function POST(req: Request) {
         if (!isMember) return Response.json({ message: "You are not a member of this group" }, { status: 403 })
 
         const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(session.user.id)
-        if (group.settings?.onlyAdminsCanAddMembers && !isAdmin) {
+        if ((group.settings?.onlyAdminsCanAddMembers || group.settings?.allowMemberInvites === false) && !isAdmin) {
             return Response.json({ message: "Only group admins can add members" }, { status: 403 })
         }
 
