@@ -89,7 +89,7 @@ test("Redis Lua integration: message delete strips media fields atomically", { s
   assert.equal(deleted.message.mediaUrl, undefined);
   assert.equal(deleted.message.fileName, undefined);
   assert.equal(deleted.message.senderImg, undefined);
-  assert.equal(await rows(CHAT).length, 1, "the row is replaced, not duplicated");
+  assert.equal((await rows(CHAT)).length, 1, "the row is replaced, not duplicated");
 });
 
 test("Redis Lua integration: message react toggles per-user without losing other reactions", { skip: !enabled }, async () => {
