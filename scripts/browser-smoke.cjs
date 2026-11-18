@@ -12,7 +12,9 @@ async function exerciseBrowser(name, browserType) {
   const browser = await browserType.launch({ headless: true, args: name === "chromium" ? ["--no-sandbox"] : [] });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
   const pageErrors = [];
+  const failedRequests = [];
   page.on("pageerror", error => pageErrors.push(error.message));
+  page.on("requestfailed", request => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText || "failed"}`));
 
   try {
     await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
@@ -47,9 +49,12 @@ async function exerciseBrowser(name, browserType) {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
-    assert.ok(await page.getByRole("heading", { name: /welcome to chat\+/i }).isVisible());
+    const desktopHeading = page.getByRole("heading", { name: /welcome to chat\+/i });
+    await desktopHeading.waitFor({ state: "visible", timeout: 15_000 });
+    assert.equal(await desktopHeading.isVisible(), true, `${name}: login heading should be visible on desktop`);
 
     assert.deepEqual(pageErrors, [], `${name}: no uncaught browser errors should occur during authentication journeys`);
+    assert.deepEqual(failedRequests, [], `${name}: no network requests should fail during authentication journeys`);
     console.log(`${name}: login, password toggle, signup validation, responsive viewports passed`);
   } finally {
     await browser.close();
