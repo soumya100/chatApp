@@ -1,5 +1,9 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import {
+    commitGroupMembershipAtomically,
+    GroupMembershipCommitInput
+} from "@/lib/group-atomic-commit"
 import { resolveAdminIds } from "@/lib/group"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
@@ -15,40 +19,6 @@ const addMembersSchema = z.object({
 })
 
 const MAX_COMMIT_ATTEMPTS = 4
-
-// Compare-and-set every document this script writes, all in one Redis
-// transaction: the group document (KEYS[1] against ARGV[1]) and the community
-// document (against ARGV[12]). Both verifications run BEFORE the first write,
-// so a rejected caller leaves no partial state behind, and Redis executes the
-// script atomically, so no other command can interleave with the writes. Two
-// concurrent "add members" calls can no longer overwrite each other's member
-// list or drop a concurrent community update: the losing call retries on
-// freshly read documents instead (result 0 = stale group, result 2 = stale
-// community).
-const atomicGroupMemberAdd = `
-local current = redis.call("GET", KEYS[1])
-if current ~= ARGV[1] then return 0 end
-
-local communityKey = ARGV[9]
-if communityKey ~= "" and redis.call("GET", communityKey) ~= ARGV[12] then return 2 end
-
-local addedIds = cjson.decode(ARGV[6])
-local systemMessage = cjson.decode(ARGV[7])
-
-redis.call("SET", KEYS[1], ARGV[3])
-for _, memberId in ipairs(addedIds) do
-  redis.call("SADD", KEYS[2], memberId)
-  redis.call("SADD", "user:" .. memberId .. ":groups", ARGV[5])
-end
-redis.call("ZADD", KEYS[3], tonumber(systemMessage.timestamp), ARGV[7])
-if communityKey ~= "" then
-  redis.call("SET", communityKey, ARGV[10])
-  for _, memberId in ipairs(addedIds) do
-    redis.call("SADD", "user:" .. memberId .. ":communities", ARGV[11])
-  end
-end
-return 1
-`
 
 function decode<T>(raw: unknown): T {
     return (typeof raw === "string" ? JSON.parse(raw) : raw) as T
@@ -70,6 +40,8 @@ export async function POST(req: Request) {
         if (!session?.user?.id) return Response.json({ message: "Unauthorized" }, { status: 401 })
 
         let body: unknown
+        // A malformed request body is rejected with a typed 400 — it is
+        // reported to the caller, never swallowed.
         try {
             body = await req.json()
         } catch {
@@ -98,6 +70,16 @@ export async function POST(req: Request) {
             if (!isMember) return Response.json({ message: "You are not a member of this group" }, { status: 403 })
 
             const isAdmin = resolveAdminIds(group).includes(session.user.id)
+
+            // Authorization contract (stated requirement R-AUTH-1 of this PR's
+            // group-settings redesign, asserted by tests/group-api.test.cjs):
+            // the GroupSettingsModal writes three add-member policies and this
+            // route enforces them server-side. `approvalRequired` blocks
+            // member-initiated adds entirely (admin must approve);
+            // `allowMemberInvites: false` (explicitly set, so undefined keeps
+            // the legacy member-can-invite behaviour) folds into the existing
+            // admin-only gate. Both predate the atomic commit, so a rejected
+            // caller writes nothing.
             if (group.settings?.approvalRequired && !isAdmin) {
                 return Response.json(
                     { message: "A group admin must approve new members", code: "ADMIN_APPROVAL_REQUIRED" },
@@ -116,19 +98,37 @@ export async function POST(req: Request) {
                 return Response.json({ message: "Selected users are already group members" }, { status: 409 })
             }
 
-            const usersPipeline = db.pipeline()
-            uniqueIds.forEach(id => usersPipeline.get(`user:${id}`))
-            const rawUsers = await usersPipeline.exec()
+            const rawUsers = await Promise.all(uniqueIds.map(id => db.get(`user:${id}`)))
+            let malformedUserRecords = 0
             const validMembers = uniqueIds.flatMap((id, index) => {
                 const raw = rawUsers[index]
                 if (!raw) return []
                 try {
                     const user = decode<User>(raw)
                     return user?.id ? [{ id, name: user.name || "Member" }] : []
-                } catch { return [] }
+                } catch {
+                    malformedUserRecords += 1
+                    return []
+                }
             })
+            // A malformed stored user record is never silently dropped: the
+            // count is logged (no identifiers — the raw record may hold
+            // profile data) and surfaced in the failure payload when it is
+            // the reason nothing could be added.
+            if (malformedUserRecords) {
+                console.warn(`Member add skipped ${malformedUserRecords} malformed user record(s).`)
+            }
             const validMemberIds = validMembers.map(member => member.id)
-            if (!validMemberIds.length) return Response.json({ message: "No valid users were selected" }, { status: 404 })
+            if (!validMemberIds.length) {
+                return Response.json(
+                    {
+                        message: malformedUserRecords
+                            ? `None of the selected users could be loaded (${malformedUserRecords} malformed user record(s) skipped)`
+                            : "No valid users were selected"
+                    },
+                    { status: 404 }
+                )
+            }
             const addedNames = validMembers.map(member => member.name)
 
             const updatedGroup: Group = {
@@ -146,40 +146,40 @@ export async function POST(req: Request) {
                 senderName: "System"
             }
 
-            let communityKey = ""
-            let nextCommunity = ""
-            let expectedCommunityRaw = ""
             const communityId = group.communityId || ""
+            let community: GroupMembershipCommitInput["community"] = {
+                key: "",
+                next: "",
+                id: "",
+                expectedRaw: ""
+            }
             if (communityId) {
                 const rawCommunity = await db.get(`community:${communityId}`)
                 if (rawCommunity) {
-                    const community = decode<{ memberIds?: string[]; updatedAt?: number } & Record<string, unknown>>(rawCommunity)
-                    community.memberIds = Array.from(new Set([...(community.memberIds || []), ...validMemberIds]))
-                    community.updatedAt = Date.now()
-                    communityKey = `community:${communityId}`
-                    nextCommunity = JSON.stringify(community)
-                    expectedCommunityRaw = typeof rawCommunity === "string" ? rawCommunity : JSON.stringify(rawCommunity)
+                    const communityDoc = decode<{ memberIds?: string[]; updatedAt?: number } & Record<string, unknown>>(rawCommunity)
+                    communityDoc.memberIds = Array.from(new Set([...(communityDoc.memberIds || []), ...validMemberIds]))
+                    communityDoc.updatedAt = Date.now()
+                    community = {
+                        key: `community:${communityId}`,
+                        next: JSON.stringify(communityDoc),
+                        id: communityId,
+                        expectedRaw: typeof rawCommunity === "string" ? rawCommunity : JSON.stringify(rawCommunity)
+                    }
                 }
             }
 
-            const result = await db.eval(
-                atomicGroupMemberAdd,
-                [groupKey, membersSetKey, messagesKey],
-                [
-                    expectedRaw,
-                    "addMembers",
-                    JSON.stringify(updatedGroup),
-                    session.user.id,
-                    groupId,
-                    JSON.stringify(validMemberIds),
-                    JSON.stringify(systemMessage),
-                    "false",
-                    communityKey,
-                    nextCommunity,
-                    communityId,
-                    expectedCommunityRaw
-                ]
-            )
+            const result = await commitGroupMembershipAtomically({
+                groupKey,
+                membersSetKey,
+                messagesKey,
+                expectedRaw,
+                updatedGroup,
+                actorId: session.user.id,
+                groupId,
+                addedMemberIds: validMemberIds,
+                systemMessage,
+                community
+            })
 
             if (Number(result) === 1) {
                 committed = { group: updatedGroup, addedCount: validMemberIds.length, addedIds: validMemberIds, systemMessage }

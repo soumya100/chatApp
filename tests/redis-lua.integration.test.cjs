@@ -142,7 +142,7 @@ test("Redis Lua integration: pinning rejects system/deleted messages and updates
 });
 
 test("Redis Lua integration: member add compare-and-sets both the group and the community documents", { skip: !enabled }, async () => {
-  const script = lua("src/app/api/group/members/add/route.ts", "atomicGroupMemberAdd");
+  const script = lua("src/lib/group-atomic-commit.ts", "atomicGroupMemberAdd");
   await redis(["FLUSHDB"]);
 
   const groupKey = "group:g-add";
