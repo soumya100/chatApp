@@ -96,6 +96,33 @@ test("CI placeholder env vars are scoped to the jobs that build and run the app"
   }
 });
 
+test("CI credential-shaped variables are generated per run, never committed as literals", () => {
+  const ci = read(".github/workflows/chatapp-ci.yml");
+  for (const name of ["NEXTAUTH_SECRET", "PUSHER_APP_SECRET", "BLOB_READ_WRITE_TOKEN", "UPSTASH_REDIS_REST_TOKEN"]) {
+    assert.doesNotMatch(
+      ci,
+      new RegExp(`^\\s+${name}: \\S+`, "m"),
+      `${name} must not be committed as a literal env value; it is generated per run`
+    );
+  }
+  const generateSteps = ci.match(/Generate ephemeral CI-only credentials/g) || [];
+  assert.equal(generateSteps.length, 3, "each app-running job must generate its own ephemeral credentials");
+  assert.match(ci, /openssl rand -base64/, "credentials must come from a per-run random source");
+});
+
+test("CI installs no OS packages and the Redis suites use the in-repo RESP client", () => {
+  for (const file of ["chatapp-ci.yml", "deploy-production.yml", "security.yml", "codeql.yml"]) {
+    const source = read(path.join(".github", "workflows", file));
+    assert.doesNotMatch(source, /apt-get\s+install/, `${file} must not install OS packages at run time`);
+  }
+  for (const file of ["redis-lua.integration.test.cjs", "redis-message-scripts.integration.test.cjs"]) {
+    const source = read(path.join("tests", file));
+    assert.doesNotMatch(source, /spawnSync\("redis-cli"/, `${file} must not shell out to the redis-cli binary`);
+    assert.match(source, /resp-redis-client/, `${file} must talk RESP through the in-repo client`);
+  }
+  assert.ok(fs.existsSync(path.join(root, "tests", "helpers", "resp-redis-client.cjs")), "the RESP client helper must exist");
+});
+
 test("workflows triggered by pull requests never reference repository secrets", () => {
   const workflowDirectory = path.join(root, ".github", "workflows");
   const workflowFiles = fs.readdirSync(workflowDirectory).filter(file => /\.ya?ml$/.test(file));

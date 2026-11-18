@@ -78,11 +78,6 @@ jobs:
           node-version: 22
           package-manager-cache: false
 
-      - name: Install Redis CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes redis-tools
-
       - name: Run real Redis integration tests
         env:
           REDIS_HOST: 127.0.0.1
@@ -96,23 +91,32 @@ jobs:
     timeout-minutes: 45
     needs: unit-and-static
     env:
-      # Non-production placeholder values only: they exist so `next build` and the
-      # started production server accept bootstrapping in CI. They are job-scoped
-      # (never workflow-level), are not repository secrets, and are never valid in
-      # any deployed environment.
+      # Non-production bootstrap values for `next build` and the started
+      # production server. Credential-shaped variables (secrets, tokens) are
+      # NOT committed here: the first step of this job generates fresh random
+      # values per run, so no credential material ever lives in the repository.
+      # They are job-scoped (never workflow-level) and never valid in any
+      # deployed environment.
       UPSTASH_REDIS_REST_URL: https://example.upstash.io
-      UPSTASH_REDIS_REST_TOKEN: ci-only-placeholder
-      NEXTAUTH_SECRET: ci-only-placeholder-secret-not-for-production
       NEXTAUTH_URL: http://localhost:3100
       PUSHER_APP_ID: "123456"
       NEXT_PUBLIC_PUSHER_APP_KEY: ci-only-placeholder
-      PUSHER_APP_SECRET: ci-only-placeholder
       PUSHER_APP_CLUSTER: ap2
       NEXT_PUBLIC_PUSHER_APP_CLUSTER: ap2
-      BLOB_READ_WRITE_TOKEN: ci-only-placeholder
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Generate ephemeral CI-only credentials
+        run: |
+          # Fresh random values per run: nothing credential-shaped is committed
+          # to the repository, and nothing generated here outlives the job.
+          {
+            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
+            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
+            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
+            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
+          } >> "$GITHUB_ENV"
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -181,23 +185,32 @@ jobs:
     timeout-minutes: 45
     needs: unit-and-static
     env:
-      # Non-production placeholder values only: they exist so `next build` and the
-      # started production server accept bootstrapping in CI. They are job-scoped
-      # (never workflow-level), are not repository secrets, and are never valid in
-      # any deployed environment.
+      # Non-production bootstrap values for `next build` and the started
+      # production server. Credential-shaped variables (secrets, tokens) are
+      # NOT committed here: the first step of this job generates fresh random
+      # values per run, so no credential material ever lives in the repository.
+      # They are job-scoped (never workflow-level) and never valid in any
+      # deployed environment.
       UPSTASH_REDIS_REST_URL: https://example.upstash.io
-      UPSTASH_REDIS_REST_TOKEN: ci-only-placeholder
-      NEXTAUTH_SECRET: ci-only-placeholder-secret-not-for-production
       NEXTAUTH_URL: http://localhost:3100
       PUSHER_APP_ID: "123456"
       NEXT_PUBLIC_PUSHER_APP_KEY: ci-only-placeholder
-      PUSHER_APP_SECRET: ci-only-placeholder
       PUSHER_APP_CLUSTER: ap2
       NEXT_PUBLIC_PUSHER_APP_CLUSTER: ap2
-      BLOB_READ_WRITE_TOKEN: ci-only-placeholder
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Generate ephemeral CI-only credentials
+        run: |
+          # Fresh random values per run: nothing credential-shaped is committed
+          # to the repository, and nothing generated here outlives the job.
+          {
+            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
+            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
+            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
+            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
+          } >> "$GITHUB_ENV"
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -325,23 +338,32 @@ jobs:
     timeout-minutes: 45
     needs: unit-and-static
     env:
-      # Non-production placeholder values only: they exist so `next build` and the
-      # started production server accept bootstrapping in CI. They are job-scoped
-      # (never workflow-level), are not repository secrets, and are never valid in
-      # any deployed environment.
+      # Non-production bootstrap values for `next build` and the started
+      # production server. Credential-shaped variables (secrets, tokens) are
+      # NOT committed here: the first step of this job generates fresh random
+      # values per run, so no credential material ever lives in the repository.
+      # They are job-scoped (never workflow-level) and never valid in any
+      # deployed environment.
       UPSTASH_REDIS_REST_URL: https://example.upstash.io
-      UPSTASH_REDIS_REST_TOKEN: ci-only-placeholder
-      NEXTAUTH_SECRET: ci-only-placeholder-secret-not-for-production
       NEXTAUTH_URL: http://localhost:3100
       PUSHER_APP_ID: "123456"
       NEXT_PUBLIC_PUSHER_APP_KEY: ci-only-placeholder
-      PUSHER_APP_SECRET: ci-only-placeholder
       PUSHER_APP_CLUSTER: ap2
       NEXT_PUBLIC_PUSHER_APP_CLUSTER: ap2
-      BLOB_READ_WRITE_TOKEN: ci-only-placeholder
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Generate ephemeral CI-only credentials
+        run: |
+          # Fresh random values per run: nothing credential-shaped is committed
+          # to the repository, and nothing generated here outlives the job.
+          {
+            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
+            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
+            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
+            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
+          } >> "$GITHUB_ENV"
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
