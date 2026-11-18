@@ -4,7 +4,7 @@ import { FC, FormEvent, useCallback, useEffect, useState } from "react"
 import axios from "axios"
 import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
-import { CalendarDays, Check, Loader2, Megaphone, Plus, X } from "lucide-react"
+import { CalendarDays, Check, Loader2, Megaphone, X } from "lucide-react"
 
 interface Props { isOpen: boolean; onClose: () => void; groupId: string; isAdmin: boolean }
 type FeatureData = { polls: any[]; events: any[]; announcements: any[] }
