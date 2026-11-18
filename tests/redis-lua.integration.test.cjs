@@ -140,3 +140,50 @@ test("Redis Lua integration: pinning rejects system/deleted messages and updates
   assert.equal(unpinned.isPinned, false);
   assert.equal(unpinned.pinnedAt, undefined);
 });
+
+test("Redis Lua integration: member add compare-and-sets both the group and the community documents", { skip: !enabled }, async () => {
+  const script = lua("src/app/api/group/members/add/route.ts", "atomicGroupMemberAdd");
+  await redis(["FLUSHDB"]);
+
+  const groupKey = "group:g-add";
+  const members = "group:g-add:members";
+  const messages = "chat:group--g-add:messages";
+  const communityKey = "community:c-add";
+  const before = JSON.stringify({ id: "g-add", memberIds: ["owner"], creatorId: "owner" });
+  const after = JSON.stringify({ id: "g-add", memberIds: ["owner", "new-member"], creatorId: "owner" });
+  const systemMessage = JSON.stringify({ id: "m-add", senderId: "system", timestamp: 42, text: "Added new-member" });
+  const communityBefore = JSON.stringify({ id: "c-add", memberIds: ["owner"] });
+  const communityAfter = JSON.stringify({ id: "c-add", memberIds: ["owner", "new-member"] });
+
+  await redis(["SET", groupKey, before]);
+  await redis(["SET", communityKey, communityBefore]);
+  await redis(["SADD", "user:owner:groups", "g-add"]);
+
+  // A stale group document returns 0 and must not commit anything.
+  const staleGroup = await evalLua(script, [groupKey, members, messages],
+    [JSON.stringify({ stale: true }), "addMembers", after, "owner", "g-add", '["new-member"]',
+      systemMessage, "false", communityKey, communityAfter, "c-add", communityBefore]);
+  assert.equal(staleGroup, "0");
+  assert.equal(await redis(["GET", groupKey]), before, "a stale group must not commit");
+
+  // A stale community document returns 2 and must not commit the group either.
+  const staleCommunity = await evalLua(script, [groupKey, members, messages],
+    [before, "addMembers", after, "owner", "g-add", '["new-member"]',
+      systemMessage, "false", communityKey, communityAfter, "c-add", JSON.stringify({ id: "c-add", memberIds: ["stale"] })]);
+  assert.equal(staleCommunity, "2");
+  assert.equal(await redis(["GET", groupKey]), before, "a stale community must not commit the group either");
+  assert.equal(await redis(["GET", communityKey]), communityBefore, "a stale community must not commit itself");
+  assert.equal(await redis(["SISMEMBER", members, "new-member"]), "0");
+
+  // Fresh documents return 1 and commit every write atomically.
+  const committed = await evalLua(script, [groupKey, members, messages],
+    [before, "addMembers", after, "owner", "g-add", '["new-member"]',
+      systemMessage, "false", communityKey, communityAfter, "c-add", communityBefore]);
+  assert.equal(committed, "1");
+  assert.equal(await redis(["GET", groupKey]), after);
+  assert.equal(await redis(["SISMEMBER", members, "new-member"]), "1");
+  assert.equal(await redis(["SISMEMBER", "user:new-member:groups", "g-add"]), "1");
+  assert.equal(await redis(["SISMEMBER", "user:new-member:communities", "c-add"]), "1");
+  assert.notEqual(await redis(["ZSCORE", messages, systemMessage]), "");
+  assert.equal(await redis(["GET", communityKey]), communityAfter);
+});

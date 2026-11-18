@@ -525,3 +525,42 @@ test("member invitation gives up with 409 when conflicts never resolve", async (
   assert.equal(h.getGroup().memberIds.includes("new-user"), false, "no partial membership may be committed");
   assert.equal(h.getSetMembers("group:g1:members").includes("new-user"), false);
 });
+
+test("member invitation absorbs a concurrent community update and commits the merged roster", async () => {
+  h.reset({ group: { communityId: "c1" } });
+  h.setUser("new-user", { name: "New User" });
+  h.seedKv("community:c1", { id: "c1", name: "Community one", memberIds: ["owner"], updatedAt: 1 });
+  // A concurrent writer replaces the community document inside the route's
+  // read -> commit window. The stale community must be detected by the Lua
+  // compare-and-set (result 2) and the retry must re-merge from the concurrent
+  // document instead of overwriting it.
+  let mutated = false;
+  h.setScriptRaceHook(() => {
+    if (mutated) return;
+    mutated = true;
+    h.seedKv("community:c1", { id: "c1", name: "Community one", memberIds: ["owner", "concurrent-writer"], updatedAt: 2 });
+  });
+  const result = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user"] })));
+  assert.equal(result.status, 200, "a one-off community conflict must be retried, not dropped");
+  const community = JSON.parse(h.getKv("community:c1"));
+  assert.ok(community.memberIds.includes("concurrent-writer"), "the concurrent writer's membership must survive");
+  assert.ok(community.memberIds.includes("new-user"), "the invited member must join the committed community");
+  assert.ok(h.getSetMembers("user:new-user:communities").includes("c1"));
+});
+
+test("member invitation gives up with 409 when the community document keeps changing", async () => {
+  h.reset({ group: { communityId: "c1" } });
+  h.setUser("new-user", { name: "New User" });
+  h.seedKv("community:c1", { id: "c1", memberIds: ["owner"] });
+  let generations = 0;
+  h.setScriptRaceHook(() => {
+    generations += 1;
+    h.seedKv("community:c1", { id: "c1", memberIds: ["owner"], generation: generations });
+  });
+  const result = await read(await addMembers.POST(h.request({ groupId: "g1", memberIds: ["new-user"] })));
+  assert.equal(result.status, 409);
+  assert.equal(h.getGroup().memberIds.includes("new-user"), false, "no partial group membership may be committed");
+  const community = JSON.parse(h.getKv("community:c1"));
+  assert.ok(!community.memberIds.includes("new-user"), "no partial community membership may be committed");
+  assert.ok(h.getSetMembers("user:new-user:communities").size === 0 || !h.getSetMembers("user:new-user:communities").includes("c1"));
+});

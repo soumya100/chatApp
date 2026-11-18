@@ -255,6 +255,11 @@ function globToRegExp(pattern) {
 const LUA_FEATURES_SCRIPT_MARKER = 'local raw = redis.call("GET", KEYS[1])';
 const LUA_GROUP_CAS_SCRIPT_MARKER = 'local current = redis.call("GET"';
 
+// Optional race-window hook: invoked at the start of every scripted commit so
+// a test can mutate Redis state between the route's read phase and the atomic
+// commit, simulating a concurrent writer without forced CAS conflicts.
+let scriptRaceHook = null;
+
 // Locates a message row by id while keeping malformed rows observable: a
 // corrupt stored row is counted and reported instead of being silently
 // skipped by an invisible catch.
@@ -365,6 +370,7 @@ const db = {
   async zscore(key, member) { return zscore(key, member); },
   async zrange(key, start, end, options) { return zrange(key, start, end, options); },
   async eval(script, keys, args) {
+    if (scriptRaceHook) scriptRaceHook(script, keys, args);
     if (script.includes(LUA_FEATURES_SCRIPT_MARKER)) {
       const groupId = keys[0].slice("group:".length, -":features".length);
       const userId = args[0];
@@ -517,6 +523,11 @@ const db = {
       if (current !== args[0]) return 0;
       const action = args[1];
       if (action === "addMembers") {
+        // The community document is compare-and-set checked inside the same
+        // script (ARGV[12] carries the raw value the route read). A concurrent
+        // community update makes the script return 2 so the route retries on
+        // freshly read documents instead of dropping the concurrent change.
+        if (args[8] && readRaw(args[8]) !== args[11]) return 2;
         groups.set(groupId, args[2]);
         const addedIds = JSON.parse(args[5]);
         for (const memberId of addedIds) {
@@ -654,6 +665,7 @@ function reset(overrides = {}) {
   zsets.clear();
   ttl.clear();
   skippedMalformedMessageRows = 0;
+  scriptRaceHook = null;
   pusherFailure = false;
   blobFailure = false;
   pusherEvents.length = 0;
@@ -718,6 +730,7 @@ function seedHash(key, fields) { hashes.set(key, { ...fields }); }
 function getHash(key) { return { ...hashFields(key) }; }
 function getZset(key) { return (zsets.get(key) || []).map(row => ({ score: row.score, value: parse(row.member) })); }
 function forceRedisConflicts(count) { forcedConflicts = count; }
+function setScriptRaceHook(hook) { scriptRaceHook = typeof hook === "function" ? hook : null; }
 function setPusherFailure(enabled) { pusherFailure = enabled; }
 function setBlobFailure(enabled) { blobFailure = enabled; }
 function getSetMembers(key) { return Array.from(sets.get(key) || []); }
@@ -736,7 +749,7 @@ async function body(response) { return response.json(); }
 module.exports = {
   reset, setUser, setSession, setGroup, getGroup, setFeatures, getFeatures,
   setMessages, getMessages, setDirectMessages, getDirectMessages, seedSet, seedZsetEntry, seedKv,
-  seedHash, getKv, getHash, getZset, forceRedisConflicts, setPusherFailure, setBlobFailure,
+  seedHash, getKv, getHash, getZset, forceRedisConflicts, setScriptRaceHook, setPusherFailure, setBlobFailure,
   blobCalls, uploadConfigs, pusherAuthCalls, getSetMembers, request, requestRaw, body, loadRoute, pusherEvents,
   db,
 };

@@ -16,33 +16,35 @@ const addMembersSchema = z.object({
 
 const MAX_COMMIT_ATTEMPTS = 4
 
-// Compare-and-set the group document, both membership indexes, the system
-// message and the community index in one Redis transaction. Every
-// authorization decision is repeated against the document version that is
-// actually committed, so two concurrent "add members" calls can no longer
-// overwrite each other's member list (the losing call retries on the fresh
-// document instead).
+// Compare-and-set every document this script writes, all in one Redis
+// transaction: the group document (KEYS[1] against ARGV[1]) and the community
+// document (against ARGV[12]). Both verifications run BEFORE the first write,
+// so a rejected caller leaves no partial state behind, and Redis executes the
+// script atomically, so no other command can interleave with the writes. Two
+// concurrent "add members" calls can no longer overwrite each other's member
+// list or drop a concurrent community update: the losing call retries on
+// freshly read documents instead (result 0 = stale group, result 2 = stale
+// community).
 const atomicGroupMemberAdd = `
 local current = redis.call("GET", KEYS[1])
 if current ~= ARGV[1] then return 0 end
 
-local addedIds = cjson.decode(ARGV[6])
-local systemMessage = ARGV[7]
 local communityKey = ARGV[9]
-local nextCommunity = ARGV[10]
-local communityId = ARGV[11]
+if communityKey ~= "" and redis.call("GET", communityKey) ~= ARGV[12] then return 2 end
+
+local addedIds = cjson.decode(ARGV[6])
+local systemMessage = cjson.decode(ARGV[7])
 
 redis.call("SET", KEYS[1], ARGV[3])
 for _, memberId in ipairs(addedIds) do
   redis.call("SADD", KEYS[2], memberId)
   redis.call("SADD", "user:" .. memberId .. ":groups", ARGV[5])
 end
-local message = cjson.decode(systemMessage)
-redis.call("ZADD", KEYS[3], tonumber(message.timestamp), systemMessage)
+redis.call("ZADD", KEYS[3], tonumber(systemMessage.timestamp), ARGV[7])
 if communityKey ~= "" then
-  redis.call("SET", communityKey, nextCommunity)
+  redis.call("SET", communityKey, ARGV[10])
   for _, memberId in ipairs(addedIds) do
-    redis.call("SADD", "user:" .. memberId .. ":communities", communityId)
+    redis.call("SADD", "user:" .. memberId .. ":communities", ARGV[11])
   end
 end
 return 1
@@ -50,6 +52,16 @@ return 1
 
 function decode<T>(raw: unknown): T {
     return (typeof raw === "string" ? JSON.parse(raw) : raw) as T
+}
+
+// Realtime/infra error strings can embed control characters that forge log
+// lines. They are neutralised without a control-character regex (which itself
+// trips lint rules) and bounded so one failure cannot flood the log.
+function sanitizeLogDetail(detail: string): string {
+    return Array.from(detail)
+        .map(character => (character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127 ? " " : character))
+        .join("")
+        .slice(0, 200)
 }
 
 export async function POST(req: Request) {
@@ -136,6 +148,7 @@ export async function POST(req: Request) {
 
             let communityKey = ""
             let nextCommunity = ""
+            let expectedCommunityRaw = ""
             const communityId = group.communityId || ""
             if (communityId) {
                 const rawCommunity = await db.get(`community:${communityId}`)
@@ -145,6 +158,7 @@ export async function POST(req: Request) {
                     community.updatedAt = Date.now()
                     communityKey = `community:${communityId}`
                     nextCommunity = JSON.stringify(community)
+                    expectedCommunityRaw = typeof rawCommunity === "string" ? rawCommunity : JSON.stringify(rawCommunity)
                 }
             }
 
@@ -162,7 +176,8 @@ export async function POST(req: Request) {
                     "false",
                     communityKey,
                     nextCommunity,
-                    communityId
+                    communityId,
+                    expectedCommunityRaw
                 ]
             )
 
@@ -191,13 +206,14 @@ export async function POST(req: Request) {
         ])
 
         // Realtime fan-out must never fail silently: every rejected delivery is
-        // inspected, counted and logged (without member identifiers).
+        // inspected, counted and logged. The logged reason is sanitised (no
+        // control characters, bounded length) and carries no member identifiers.
         let rejectedDeliveries = 0
         for (const fanoutResult of fanoutResults) {
             if (fanoutResult.status === "rejected") {
                 rejectedDeliveries += 1
                 const reason = fanoutResult.reason instanceof Error ? fanoutResult.reason.message : String(fanoutResult.reason)
-                console.error(`Group membership realtime delivery rejected: ${reason}`)
+                console.error(`Group membership realtime delivery rejected: ${sanitizeLogDetail(reason)}`)
             }
         }
         if (rejectedDeliveries) {
@@ -206,7 +222,8 @@ export async function POST(req: Request) {
 
         return Response.json({ success: true, group: updatedGroup, addedCount })
     } catch (error) {
-        console.error("Failed to add members to group:", error)
+        const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+        console.error("Failed to add members to group:", sanitizeLogDetail(detail))
         return Response.json({ message: "Failed to add members to group" }, { status: 500 })
     }
 }
