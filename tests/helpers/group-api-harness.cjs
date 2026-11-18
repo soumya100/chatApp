@@ -11,7 +11,10 @@ const users = new Map();
 const features = new Map();
 const pinned = new Map();
 const preferences = new Map();
+const communities = new Map();
+const sets = new Map();
 const pusherEvents = [];
+let pusherFailure = false;
 
 function asJson(value) {
   return typeof value === "string" ? value : JSON.stringify(value);
@@ -30,20 +33,45 @@ const db = {
     const featureMatch = key.match(/^group:([^:]+):features$/);
     if (featureMatch) return features.get(featureMatch[1]) ?? null;
     const preferenceMatch = key.match(/^user:([^:]+):group-preferences:([^:]+)$/);
-    if (preferenceMatch) return preferences.get(`${preferenceMatch[1]}:${preferenceMatch[2]}`) ?? null;
+    if (preferenceMatch) return preferences.get(preferenceMatch[1] + ":" + preferenceMatch[2]) ?? null;
+    const communityMatch = key.match(/^community:([^:]+)$/);
+    if (communityMatch) return communities.get(communityMatch[1]) ?? null;
     return null;
   },
   pipeline() {
     const commands = [];
-    return {
-      get(key) { commands.push(key); return this; },
-      async exec() { return Promise.all(commands.map(key => db.get(key))); },
+    const pipeline = {
+      get(key) { commands.push(() => db.get(key)); return pipeline; },
+      set(key, value) { commands.push(() => db.set(key, value)); return pipeline; },
+      sadd(key, value) { commands.push(() => db.sadd(key, value)); return pipeline; },
+      zadd(key, value) { commands.push(() => db.zadd(key, value)); return pipeline; },
+      async exec() { return Promise.all(commands.map(command => command())); },
     };
+    return pipeline;
   },
   async set(key, value) {
     const match = key.match(/^user:([^:]+):group-preferences:([^:]+)$/);
-    if (match) preferences.set(`${match[1]}:${match[2]}`, value);
+    if (match) preferences.set(match[1] + ":" + match[2], value);
+    const groupMatch = key.match(/^group:([^:]+)$/);
+    if (groupMatch) groups.set(groupMatch[1], value);
+    const communityMatch = key.match(/^community:([^:]+)$/);
+    if (communityMatch) communities.set(communityMatch[1], value);
     return "OK";
+  },
+  async sadd(key, value) {
+    const values = sets.get(key) || new Set();
+    values.add(value);
+    sets.set(key, values);
+    return values.size;
+  },
+  async zadd(key, value) {
+    const match = key.match(/^chat:group--([^:]+):messages$/);
+    if (match) {
+      const rows = pinned.get(match[1]) || [];
+      rows.push(value.member);
+      pinned.set(match[1], rows);
+    }
+    return 1;
   },
   async zrange(key) {
     const match = key.match(/^chat:group--([^:]+):messages$/);
@@ -155,6 +183,7 @@ const db = {
 
 const pusherServer = {
   async trigger(channel, event, payload) {
+    if (pusherFailure) throw new Error("Pusher is unavailable in this test");
     pusherEvents.push({ channel, event, payload });
     return [];
   },
@@ -203,6 +232,9 @@ function reset(overrides = {}) {
   features.clear();
   pinned.clear();
   preferences.clear();
+  communities.clear();
+  sets.clear();
+  pusherFailure = false;
   pusherEvents.length = 0;
   const group = {
     id: "g1",
@@ -235,6 +267,11 @@ function getFeatures(groupId = "g1") { return parse(features.get(groupId)); }
 function setMessages(value, groupId = "g1") { pinned.set(groupId, value.map(asJson)); }
 function getMessages(groupId = "g1") { return (pinned.get(groupId) || []).map(parse); }
 function forceRedisConflicts(count) { forcedConflicts = count; }
+function setPusherFailure(enabled) { pusherFailure = enabled; }
+function getSetMembers(key) { return Array.from(sets.get(key) || []); }
+function requestRaw(body, method = "POST", url = "http://localhost/api/test") {
+  return new Request(url, { method, headers: { "content-type": "application/json" }, body });
+}
 function request(body, method = "POST", url = "http://localhost/api/test") {
   return new Request(url, {
     method,
@@ -246,5 +283,5 @@ async function body(response) { return response.json(); }
 
 module.exports = {
   reset, setSession, setGroup, getGroup, setFeatures, getFeatures,
-  setMessages, getMessages, forceRedisConflicts, request, body, loadRoute, pusherEvents,
+  setMessages, getMessages, forceRedisConflicts, setPusherFailure, getSetMembers, request, requestRaw, body, loadRoute, pusherEvents,
 };
