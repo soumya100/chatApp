@@ -8,13 +8,13 @@ import { notFound } from 'next/navigation'
 import { Metadata } from 'next'
 
 interface PageProps {
-  params: {
+  params: Promise<{
     chatId: string
-  }
+  }>
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { chatId } = params
+  const { chatId } = await params
   try {
     if (chatId.startsWith('group--')) {
       const groupId = chatId.replace('group--', '')
@@ -60,7 +60,7 @@ async function getChatMessages(chatId: string): Promise<Message[]> {
 }
 
 const page = async ({ params }: PageProps) => {
-  const { chatId } = params
+  const { chatId } = await params
 
   const session = await getServerSession(authOptions)
   if (!session) return notFound()
