@@ -4,7 +4,7 @@ import { FC, useCallback, useEffect, useMemo, useState } from "react"
 import axios from "axios"
 import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
-import { Avatar } from "@/common"
+import { Avatar, Button } from "@/common"
 import { Crown, Loader2, Search, Shield, ShieldOff, UserMinus, Users, X } from "lucide-react"
 
 interface MemberProfile { id: string; name: string; image?: string }
@@ -20,6 +20,7 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
   const [busyId, setBusyId] = useState<string | null>(null)
   const [members, setMembers] = useState<MemberProfile[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [query, setQuery] = useState("")
   const isCreator = group.creatorId === sessionId
   const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(sessionId)
@@ -27,12 +28,16 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
 
   const loadMembers = useCallback(async () => {
     setLoading(true)
+    setLoadError(false)
     try {
       const response = await axios.get(`/api/group/${group.id}/members`)
       setMembers(response.data.members || [])
     } catch (error: any) {
+      // Show an honest error state with a retry instead of fabricating
+      // placeholder participants that were never returned by the API.
+      setLoadError(true)
+      setMembers([])
       toast.error(error?.response?.data?.message || "Unable to load group members")
-      setMembers(group.memberIds.map(id => ({ id, name: id === sessionId ? "You" : "Group member" })))
     } finally {
       setLoading(false)
     }
@@ -72,8 +77,8 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
     <Dialog open={isOpen} onClose={onClose} className="relative z-50">
       <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-md" aria-hidden="true" />
       <div className="fixed inset-0 z-10 flex items-center justify-center overflow-y-auto p-0 sm:p-5">
-        <Dialog.Panel className="flex max-h-[100dvh] w-full flex-col overflow-hidden bg-white text-slate-900 shadow-2xl dark:bg-[#111827] dark:text-slate-100 sm:max-h-[min(86vh,760px)] sm:max-w-xl sm:rounded-3xl sm:border sm:border-slate-200 dark:sm:border-white/10">
-          <header className="shrink-0 border-b border-slate-200 bg-gradient-to-br from-slate-50 via-white to-white px-5 py-5 dark:border-white/10 dark:from-indigo-950/50 dark:via-[#111827] dark:to-[#111827] sm:px-6">
+        <Dialog.Panel className="flex max-h-[100dvh] w-full flex-col overflow-hidden bg-white text-slate-900 shadow-2xl dark:bg-zinc-900 dark:text-slate-100 sm:max-h-[min(86vh,760px)] sm:max-w-xl sm:rounded-3xl sm:border sm:border-slate-200 dark:sm:border-white/10">
+          <header className="shrink-0 border-b border-slate-200 bg-gradient-to-br from-slate-50 via-white to-white px-5 py-5 dark:border-white/10 dark:from-zinc-800/40 dark:via-zinc-900 dark:to-zinc-900 sm:px-6">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"><Users size={20}/></div>
@@ -93,6 +98,8 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-6">
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500"><Loader2 size={18} className="animate-spin text-indigo-500"/> Loading members…</div>
+            ) : loadError ? (
+              <div className="py-12 text-center"><Users size={28} className="mx-auto text-slate-300 dark:text-slate-600"/><p className="mt-3 text-sm font-medium">Couldn&apos;t load members</p><p className="mt-1 text-xs text-slate-500">Check your connection and try again.</p><Button type="button" size="sm" className="mt-4" onClick={() => void loadMembers()}>Retry</Button></div>
             ) : visibleMembers.length === 0 ? (
               <div className="py-12 text-center"><Users size={28} className="mx-auto text-slate-300 dark:text-slate-600"/><p className="mt-3 text-sm font-medium">No members found</p><p className="mt-1 text-xs text-slate-500">Try another name or search term.</p></div>
             ) : (
@@ -128,7 +135,7 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
           </div>
           <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 dark:border-white/10 sm:px-6">
             <p className="text-[11px] text-slate-500">{isCreator ? "You can manage roles and membership." : isAdmin ? "You can remove members." : "Only admins can manage membership."}</p>
-            <button type="button" onClick={onClose} className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200">Done</button>
+            <Button type="button" variant="ghost" onClick={onClose}>Done</Button>
           </footer>
         </Dialog.Panel>
       </div>

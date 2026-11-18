@@ -4,6 +4,7 @@ import { FC, useEffect, useState } from "react"
 import axios from "axios"
 import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
+import { Button } from "@/common"
 import {
   Bell, Check, Clock3, Info, Loader2, LogOut, Settings2, ShieldCheck, SlidersHorizontal, Users, X
 } from "lucide-react"
@@ -106,8 +107,8 @@ const GroupSettingsModal: FC<Props> = ({ isOpen, onClose, group, sessionId, onGr
     <Dialog open={isOpen} onClose={onClose} className="relative z-50">
       <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-md transition-opacity" aria-hidden="true" />
       <div className="fixed inset-0 z-10 flex items-center justify-center p-0 sm:p-5">
-        <Dialog.Panel className="flex max-h-[100dvh] w-full flex-col overflow-hidden bg-white text-slate-900 shadow-2xl dark:bg-[#111827] dark:text-slate-100 sm:max-h-[min(88vh,820px)] sm:max-w-3xl sm:rounded-3xl sm:border sm:border-slate-200 dark:sm:border-white/10">
-          <header className="relative shrink-0 border-b border-slate-200 bg-gradient-to-br from-slate-50 via-white to-white px-5 pb-5 pt-5 dark:border-white/10 dark:from-indigo-950/50 dark:via-[#111827] dark:to-[#111827] sm:px-7 sm:pt-7">
+        <Dialog.Panel className="flex max-h-[100dvh] w-full flex-col overflow-hidden bg-white text-slate-900 shadow-2xl dark:bg-zinc-900 dark:text-slate-100 sm:max-h-[min(88vh,820px)] sm:max-w-3xl sm:rounded-3xl sm:border sm:border-slate-200 dark:sm:border-white/10">
+          <header className="relative shrink-0 border-b border-slate-200 bg-gradient-to-br from-slate-50 via-white to-white px-5 pb-5 pt-5 dark:border-white/10 dark:from-zinc-800/40 dark:via-zinc-900 dark:to-zinc-900 sm:px-7 sm:pt-7">
             <div className="flex items-start justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3.5">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20">
@@ -163,7 +164,7 @@ const GroupSettingsModal: FC<Props> = ({ isOpen, onClose, group, sessionId, onGr
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
                   <div className="flex items-center gap-2 text-sm font-semibold"><Clock3 size={16} className="text-indigo-500" /> Disappearing messages</div>
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Choose how long messages remain available in this group.</p>
-                  <select disabled={!isAdmin} value={settings.disappearingMessagesSeconds || 0} onChange={e => setSettings(prev => ({ ...prev, disappearingMessagesSeconds: Number(e.target.value) }))} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-60 dark:border-white/10 dark:bg-[#111827]">
+                  <select disabled={!isAdmin} value={settings.disappearingMessagesSeconds || 0} onChange={e => setSettings(prev => ({ ...prev, disappearingMessagesSeconds: Number(e.target.value) }))} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-60 dark:border-white/10 dark:bg-zinc-900">
                     <option value={0}>Off</option><option value={86400}>24 hours</option><option value={604800}>7 days</option><option value={7776000}>90 days</option>
                   </select>
                   {!isAdmin && <p className="mt-2 text-[11px] text-slate-500">Only admins can change this setting.</p>}
@@ -180,12 +181,12 @@ const GroupSettingsModal: FC<Props> = ({ isOpen, onClose, group, sessionId, onGr
                 {!isAdmin && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">You can view these permissions, but only group admins can change them.</div>}
                 <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 px-4 dark:divide-white/[0.06] dark:border-white/10 sm:px-5">
                   {controls.map(control => (
-                    <label key={control.key} className={`flex items-center justify-between gap-4 py-4 ${isAdmin ? "cursor-pointer" : "cursor-default"}`}>
+                    <label key={control.key} htmlFor={`group-setting-${control.key}`} className={`flex items-center justify-between gap-4 py-4 ${isAdmin ? "cursor-pointer" : "cursor-default"}`}>
                       <span className="min-w-0 pr-2">
                         <span className="block text-sm font-medium">{control.label}</span>
                         <span className="mt-1 block text-xs leading-relaxed text-slate-500 dark:text-slate-400">{control.help}</span>
                       </span>
-                      <input type="checkbox" disabled={!isAdmin} checked={Boolean(settings[control.key])} onChange={e => setSettings(prev => ({ ...prev, [control.key]: e.target.checked }))} className="h-5 w-5 shrink-0 cursor-pointer rounded accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-60" />
+                      <input id={`group-setting-${control.key}`} type="checkbox" disabled={!isAdmin} checked={Boolean(settings[control.key])} onChange={e => setSettings(prev => ({ ...prev, [control.key]: e.target.checked }))} className="h-5 w-5 shrink-0 cursor-pointer rounded accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-60" />
                     </label>
                   ))}
                 </div>
@@ -203,16 +204,16 @@ const GroupSettingsModal: FC<Props> = ({ isOpen, onClose, group, sessionId, onGr
             )}
           </div>
 
-          <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-slate-200 bg-white px-5 py-4 dark:border-white/10 dark:bg-[#111827] sm:flex-row sm:items-center sm:justify-between sm:px-7">
+          <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-slate-200 bg-white px-5 py-4 dark:border-white/10 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between sm:px-7">
             <button type="button" onClick={leave} disabled={isLeaving} className="inline-flex items-center justify-center gap-2 self-start rounded-xl px-3 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:text-rose-400 dark:hover:bg-rose-400/10">
               {isLeaving ? <Loader2 size={15} className="animate-spin" /> : <LogOut size={15} />} Leave group
             </button>
             <div className="flex items-center justify-end gap-2">
-              <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/[0.06]">Close</button>
+              <Button type="button" variant="ghost" onClick={onClose}>Close</Button>
               {isAdmin && activeTab !== "privacy" && (
-                <button type="button" onClick={save} disabled={isSaving || name.trim().length < 2} className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
-                  {isSaving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Save changes
-                </button>
+                <Button type="button" onClick={save} isLoading={isSaving} disabled={isSaving || name.trim().length < 2}>
+                  {!isSaving && <Check size={15} />} Save changes
+                </Button>
               )}
             </div>
           </footer>

@@ -67,7 +67,7 @@ const GroupPrivacySettings: FC<Props> = ({ groupId }) => {
             <Bell size={17} className="mt-0.5 shrink-0 text-indigo-500"/>
             <span><span className="block text-sm font-medium">Notifications</span><span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">Choose which group alerts you receive.</span></span>
           </span>
-          <select disabled={saving} value={preferences.notifications} onChange={e => save({ notifications: e.target.value as Preferences["notifications"] })} className="max-w-[132px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-indigo-400 disabled:opacity-50 dark:border-white/10 dark:bg-[#111827]">
+          <select disabled={saving} value={preferences.notifications} onChange={e => save({ notifications: e.target.value as Preferences["notifications"] })} className="max-w-[132px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-indigo-400 disabled:opacity-50 dark:border-white/10 dark:bg-zinc-900">
             <option value="all">All messages</option><option value="muted">Muted</option>
           </select>
         </label>
