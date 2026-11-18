@@ -1,0 +1,337 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const h = require("./helpers/group-api-harness.cjs");
+
+const manage = h.loadRoute("src/app/api/group/[groupId]/manage/route.ts");
+const members = h.loadRoute("src/app/api/group/[groupId]/members/route.ts");
+const features = h.loadRoute("src/app/api/group/[groupId]/features/route.ts");
+const pins = h.loadRoute("src/app/api/group/[groupId]/pin/route.ts");
+const preferences = h.loadRoute("src/app/api/user/group-preferences/route.ts");
+
+const context = { params: Promise.resolve({ groupId: "g1" }) };
+const post = (route, payload) => route.POST(h.request(payload), context);
+const get = (route, url = "http://localhost/api/test") => route.GET(h.request(undefined, "GET", url), context);
+const read = async response => ({ status: response.status, data: await h.body(response) });
+
+test("group member listing: unauthenticated access is rejected", async () => {
+  h.reset({ session: null });
+  const result = await read(await get(members));
+  assert.equal(result.status, 401);
+  assert.equal(result.data.message, "Unauthorized");
+});
+
+test("group member listing: non-members cannot enumerate profiles", async () => {
+  const group = h.reset({ group: { memberIds: ["owner", "admin"] } });
+  h.setSession("outsider");
+  const result = await read(await get(members));
+  assert.equal(result.status, 403);
+  assert.match(result.data.message, /not a member/i);
+  assert.equal(group.memberIds.includes("outsider"), false);
+});
+
+test("group member listing: deduplicates IDs and returns only safe profile fields", async () => {
+  h.reset({ group: { memberIds: ["owner", "member", "member"] } });
+  const result = await read(await get(members));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.memberCount, 2);
+  assert.deepEqual(Object.keys(result.data.members[0]).sort(), ["id", "image", "name"]);
+  assert.equal(JSON.stringify(result.data).includes("private-owner@example.test"), false);
+});
+
+test("group member listing: missing/corrupt user records fall back safely", async () => {
+  h.reset({ group: { memberIds: ["owner", "missing"] } });
+  const result = await read(await get(members));
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.members[1], { id: "missing", name: "Group member", image: "" });
+});
+
+test("group management: unauthenticated and malformed requests fail closed", async () => {
+  h.reset({ session: null });
+  assert.equal((await read(await post(manage, { action: "leave" }))).status, 401);
+  h.reset();
+  assert.equal((await read(await post(manage, { action: "unknown" }))).status, 400);
+  assert.equal((await read(await post(manage, { action: "update", name: "x".repeat(51) }))).status, 400);
+  assert.equal((await read(await post(manage, { action: "update", settings: { announcementsOnly: "yes" } }))).status, 400);
+});
+
+test("group management: missing groups and non-members are rejected", async () => {
+  h.reset({ group: null });
+  assert.equal((await read(await post(manage, { action: "leave" }))).status, 404);
+  h.reset();
+  h.setSession("outsider");
+  assert.equal((await read(await post(manage, { action: "leave" }))).status, 403);
+});
+
+test("group management: admins can update details and settings atomically", async () => {
+  h.reset();
+  const result = await read(await post(manage, {
+    action: "update",
+    name: "  Product team  ",
+    description: " New description ",
+    settings: { onlyAdminsCanPinMessages: true, disappearingMessagesSeconds: 3600 },
+  }));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.group.name, "Product team");
+  assert.equal(result.data.group.description, "New description");
+  assert.equal(result.data.group.settings.onlyAdminsCanPinMessages, true);
+  assert.equal(result.data.group.settings.disappearingMessagesSeconds, 3600);
+  assert.ok(h.pusherEvents.some(event => event.event === "group_updated"));
+});
+
+test("group management: ordinary members cannot change group settings", async () => {
+  h.reset();
+  h.setSession("member");
+  const result = await read(await post(manage, { action: "update", settings: { announcementsOnly: true } }));
+  assert.equal(result.status, 403);
+});
+
+test("group management: restricted group information cannot be edited by members", async () => {
+  h.reset({ group: { settings: { onlyAdminsCanEditInfo: true } } });
+  h.setSession("member");
+  const result = await read(await post(manage, { action: "update", name: "Changed name" }));
+  assert.equal(result.status, 403);
+});
+
+test("group management: creator can promote a member and promotion is idempotent", async () => {
+  h.reset();
+  let result = await read(await post(manage, { action: "promote", memberId: "member" }));
+  assert.equal(result.status, 200);
+  assert.ok(result.data.group.adminIds.includes("member"));
+  result = await read(await post(manage, { action: "promote", memberId: "member" }));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.group.adminIds.filter(id => id === "member").length, 1);
+});
+
+test("group management: non-creator admins cannot promote or demote", async () => {
+  h.reset();
+  h.setSession("admin");
+  assert.equal((await read(await post(manage, { action: "promote", memberId: "member" }))).status, 403);
+  assert.equal((await read(await post(manage, { action: "demote", memberId: "admin" }))).status, 403);
+});
+
+test("group management: the creator cannot lose their own admin role", async () => {
+  h.reset();
+  const promoteSelf = await read(await post(manage, { action: "promote", memberId: "owner" }));
+  const demoteSelf = await read(await post(manage, { action: "demote", memberId: "owner" }));
+  assert.equal(promoteSelf.status, 400);
+  assert.equal(demoteSelf.status, 400);
+});
+
+test("group management: creator can demote another admin", async () => {
+  h.reset();
+  const result = await read(await post(manage, { action: "demote", memberId: "admin" }));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.group.adminIds.includes("admin"), false);
+});
+
+test("group management: admins can remove non-creators but cannot remove the creator", async () => {
+  h.reset();
+  const removed = await read(await post(manage, { action: "remove", memberId: "member" }));
+  assert.equal(removed.status, 200);
+  assert.equal(removed.data.group.memberIds.includes("member"), false);
+  assert.deepEqual(removed.data.removed, ["member"]);
+  const ownerRemoval = await read(await post(manage, { action: "remove", memberId: "owner" }));
+  assert.equal(ownerRemoval.status, 400);
+});
+
+test("group management: non-admins cannot remove members and unknown targets return 404", async () => {
+  h.reset();
+  h.setSession("member");
+  assert.equal((await read(await post(manage, { action: "remove", memberId: "other" }))).status, 403);
+  h.reset();
+  assert.equal((await read(await post(manage, { action: "remove", memberId: "absent" }))).status, 404);
+});
+
+test("group management: creator leaving transfers ownership to a remaining admin", async () => {
+  h.reset();
+  const result = await read(await post(manage, { action: "leave" }));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.group.creatorId, "admin");
+  assert.equal(result.data.group.memberIds.includes("owner"), false);
+  assert.ok(result.data.group.adminIds.includes("admin"));
+  assert.ok(h.pusherEvents.some(event => event.event === "group_removed"));
+});
+
+test("group management: the final member leaving deletes the group", async () => {
+  h.reset({ group: { creatorId: "owner", memberIds: ["owner"], adminIds: ["owner"] } });
+  const result = await read(await post(manage, { action: "leave" }));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.deleted, true);
+  assert.equal(h.getGroup(), undefined);
+  assert.ok(h.pusherEvents.some(event => event.event === "group_deleted"));
+});
+
+test("group management: compare-and-set retries are bounded and return 409 on contention", async () => {
+  h.reset();
+  h.forceRedisConflicts(4);
+  const result = await read(await post(manage, { action: "update", name: "Retry group" }));
+  assert.equal(result.status, 409);
+  assert.match(result.data.message, /concurrently/i);
+});
+
+test("group features: authentication, membership and payload validation are enforced", async () => {
+  h.reset({ session: null });
+  assert.equal((await read(await post(features, { action: "createPoll", question: "Roadmap?", options: ["A", "B"] }))).status, 401);
+  h.reset();
+  h.setSession("outsider");
+  assert.equal((await read(await post(features, { action: "announce", text: "Hello" }))).status, 403);
+  h.setSession("owner");
+  assert.equal((await read(await post(features, { action: "createPoll", question: "x", options: ["A", "B"] }))).status, 400);
+  assert.equal((await read(await post(features, { action: "createPoll", question: "Valid?", options: ["Only one"] }))).status, 400);
+});
+
+test("group features: members can create valid polls unless admin-only mode is enabled", async () => {
+  h.reset();
+  h.setSession("member");
+  let result = await read(await post(features, { action: "createPoll", question: "Choose a plan?", options: ["Basic", "Pro"] }));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.features.polls.length, 1);
+  h.reset({ group: { settings: { onlyAdminsCanCreatePolls: true } } });
+  h.setSession("member");
+  result = await read(await post(features, { action: "createPoll", question: "Choose a plan?", options: ["Basic", "Pro"] }));
+  assert.equal(result.status, 403);
+});
+
+test("group features: poll votes deduplicate selections and replace a user's previous vote", async () => {
+  h.reset();
+  h.setSession("member");
+  h.setFeatures({ polls: [{ id: "poll-1", multiple: false, closed: false, options: [
+    { id: "a", label: "A", votes: [] }, { id: "b", label: "B", votes: [] },
+  ] }], events: [], announcements: [] });
+  let result = await read(await post(features, { action: "votePoll", pollId: "poll-1", optionIds: ["a", "a"] }));
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.result.options[0].votes, ["member"]);
+  result = await read(await post(features, { action: "votePoll", pollId: "poll-1", optionIds: ["b"] }));
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.result.options.map(option => option.votes), [[], ["member"]]);
+});
+
+test("group features: closed polls and invalid option selections are rejected", async () => {
+  h.reset();
+  h.setFeatures({ polls: [{ id: "closed", closed: true, multiple: false, options: [{ id: "a", votes: [] }] }], events: [], announcements: [] });
+  assert.equal((await read(await post(features, { action: "votePoll", pollId: "closed", optionIds: ["a"] }))).status, 404);
+  h.setFeatures({ polls: [{ id: "open", closed: false, multiple: false, options: [{ id: "a", votes: [] }] }], events: [], announcements: [] });
+  assert.equal((await read(await post(features, { action: "votePoll", pollId: "open", optionIds: ["unknown"] }))).status, 400);
+  assert.equal((await read(await post(features, { action: "votePoll", pollId: "open", optionIds: ["a", "a", "a"] }))).status, 200);
+});
+
+test("group features: event creation rejects past dates and accepts future events", async () => {
+  h.reset();
+  assert.equal((await read(await post(features, { action: "createEvent", title: "Past event", startsAt: Date.now() - 1000 }))).status, 400);
+  const result = await read(await post(features, { action: "createEvent", title: "Planning session", startsAt: Date.now() + 60_000 }));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.result.title, "Planning session");
+  assert.deepEqual(result.data.result.responses, { going: [], maybe: [], "not-going": [] });
+});
+
+test("group features: event responses move a user between RSVP states", async () => {
+  h.reset();
+  h.setSession("member");
+  h.setFeatures({ polls: [], announcements: [], events: [{ id: "event-1", responses: { going: [], maybe: [], "not-going": [] } }] });
+  assert.equal((await read(await post(features, { action: "respondEvent", eventId: "event-1", response: "maybe" }))).status, 200);
+  const result = await read(await post(features, { action: "respondEvent", eventId: "event-1", response: "going" }));
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.result.responses, { going: ["member"], maybe: [], "not-going": [] });
+  assert.equal((await read(await post(features, { action: "respondEvent", eventId: "missing", response: "going" }))).status, 404);
+});
+
+test("group features: announcement permissions are enforced and admins can publish", async () => {
+  h.reset({ group: { settings: { announcementsOnly: true } } });
+  h.setSession("member");
+  assert.equal((await read(await post(features, { action: "announce", text: "Notice" }))).status, 403);
+  h.setSession("owner");
+  const result = await read(await post(features, { action: "announce", text: "  Notice  " }));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.result.text, "Notice");
+});
+
+test("group features: GET returns member-specific poll selections only to group members", async () => {
+  h.reset();
+  h.setFeatures({ polls: [{ id: "poll-1", options: [{ id: "a", votes: ["member"] }, { id: "b", votes: [] }] }], events: [], announcements: [] });
+  h.setSession("member");
+  const result = await read(await get(features));
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.features.polls[0].myOptionIds, ["a"]);
+  h.setSession("outsider");
+  assert.equal((await read(await get(features))).status, 403);
+});
+
+test("group pins: authentication, membership and request validation are enforced", async () => {
+  h.reset({ session: null });
+  assert.equal((await read(await post(pins, { messageId: "m1", pinned: true }))).status, 401);
+  h.reset();
+  assert.equal((await read(await post(pins, { messageId: "", pinned: true }))).status, 400);
+  h.setSession("outsider");
+  assert.equal((await read(await post(pins, { messageId: "m1", pinned: true }))).status, 403);
+});
+
+test("group pins: admin-only policy blocks members while admins can pin and unpin", async () => {
+  h.reset({ group: { settings: { onlyAdminsCanPinMessages: true } } });
+  h.setMessages([{ id: "m1", senderId: "member", timestamp: 10, text: "Hello" }]);
+  h.setSession("member");
+  assert.equal((await read(await post(pins, { messageId: "m1", pinned: true }))).status, 403);
+  h.setSession("owner");
+  let result = await read(await post(pins, { messageId: "m1", pinned: true }));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.message.isPinned, true);
+  result = await read(await post(pins, { messageId: "m1", pinned: false }));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.message.isPinned, false);
+});
+
+test("group pins: system and deleted messages cannot be pinned", async () => {
+  h.reset();
+  h.setMessages([
+    { id: "system", senderId: "system", timestamp: 10, text: "System" },
+    { id: "deleted", senderId: "member", isDeleted: true, timestamp: 11, text: "Deleted" },
+  ]);
+  assert.equal((await read(await post(pins, { messageId: "system", pinned: true }))).status, 404);
+  assert.equal((await read(await post(pins, { messageId: "deleted", pinned: true }))).status, 404);
+  assert.equal((await read(await post(pins, { messageId: "missing", pinned: true }))).status, 404);
+});
+
+test("group pins: list excludes expired/deleted messages and is newest-pin first", async () => {
+  h.reset();
+  h.setMessages([
+    { id: "old", senderId: "member", isPinned: true, timestamp: 10, pinnedAt: 10 },
+    { id: "new", senderId: "member", isPinned: true, timestamp: 20, pinnedAt: 20 },
+    { id: "deleted", senderId: "member", isPinned: true, isDeleted: true, timestamp: 30, pinnedAt: 30 },
+    { id: "expired", senderId: "member", isPinned: true, expiresAt: Date.now() - 1, timestamp: 40, pinnedAt: 40 },
+  ]);
+  const result = await read(await get(pins));
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.messages.map(message => message.id), ["new", "old"]);
+});
+
+test("group preferences: authentication, group membership and query validation are enforced", async () => {
+  h.reset({ session: null });
+  assert.equal((await read(await get(preferences, "http://localhost/api/user/group-preferences?groupId=g1"))).status, 401);
+  h.reset();
+  assert.equal((await read(await get(preferences, "http://localhost/api/user/group-preferences"))).status, 400);
+  h.setSession("outsider");
+  assert.equal((await read(await get(preferences, "http://localhost/api/user/group-preferences?groupId=g1"))).status, 403);
+});
+
+test("group preferences: invalid and empty patches are rejected", async () => {
+  h.reset();
+  assert.equal((await read(await preferences.PUT(h.request({ groupId: "g1", notifications: "sometimes" })))).status, 400);
+  assert.equal((await read(await preferences.PUT(h.request({ groupId: "g1" })))).status, 400);
+});
+
+test("group preferences: updates persist per user and GET returns defaults for another user", async () => {
+  h.reset();
+  let result = await read(await preferences.PUT(h.request({
+    groupId: "g1", notifications: "muted", showReadReceipts: false, hideProfilePhoto: true,
+  })));
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.preferences.notifications, "muted");
+  assert.equal(result.data.preferences.showReadReceipts, false);
+  assert.equal(result.data.preferences.hideProfilePhoto, true);
+
+  result = await read(await get(preferences, "http://localhost/api/user/group-preferences?groupId=g1"));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.preferences.notifications, "muted");
+  h.setSession("member");
+  result = await read(await get(preferences, "http://localhost/api/user/group-preferences?groupId=g1"));
+  assert.deepEqual(result.data.preferences, { notifications: "all", showReadReceipts: true, hideProfilePhoto: false });
+});
