@@ -105,6 +105,10 @@ test("Redis Lua integration: poll voting atomically replaces a prior choice and 
   const vote = evalLua(script, [key], ["member", "votePoll", '{"pollId":"p1","optionIds":["b","b"]}']);
   const parsed = JSON.parse(vote);
   assert.deepEqual(parsed.result.options.map(option => option.votes), [[], ["member"]]);
+  const storedAfterVote = JSON.parse(redis(["GET", key]));
+  assert.deepEqual(storedAfterVote.polls[0].options.map(option => option.votes), [[], ["member"]]);
+  assert.deepEqual(storedAfterVote.events, []);
+  assert.deepEqual(storedAfterVote.announcements, []);
 
   const unchanged = redis(["GET", key]);
   const invalid = JSON.parse(evalLua(script, [key], ["outsider", "votePoll", '{"pollId":"p1","optionIds":["not-an-option"]}']));
