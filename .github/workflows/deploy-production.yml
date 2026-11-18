@@ -29,14 +29,14 @@ jobs:
     environment: production
     timeout-minutes: 30
     env:
-      VERCEL_TOKEN: \${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: \${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: \${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - name: Checkout the tested commit
         uses: actions/checkout@v7
         with:
-          ref: \${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -83,7 +83,7 @@ jobs:
       - name: Verify deployed application
         if: steps.config.outputs.configured == 'true'
         env:
-          CHATAPP_SMOKE_URL: \${{ steps.deploy.outputs.url }}
+          CHATAPP_SMOKE_URL: ${{ steps.deploy.outputs.url }}
         run: node scripts/smoke-test.cjs
 
       - name: Deployment was not configured
