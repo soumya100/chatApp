@@ -1,12 +1,18 @@
 const { spawnSync } = require("node:child_process");
 
+const pkg = require("../package.json");
+const PROD_DEPENDENCY_ROOTS = new Set(Object.keys(pkg.dependencies || {}));
+
 const EXCEPTIONS = [
   {
     id: "1247710",
     module: "picomatch",
     severity: "high",
     expiresAt: "2026-11-25T23:59:59Z",
-    reason: "CVE-2026-112366/GHSA-fc5q-39xc-vjpf has no published fixed picomatch release as of 2026-11-18. Upstream fix proposals remain open; this exception is temporary and does not assert that the package is safe.",
+    // The exception applies to dependency trees that cannot reach production
+    // code (see isReachableFromProductionDependencies); production paths always block.
+    devOnly: true,
+    reason: "CVE-2026-112366/GHSA-fc5q-39xc-vjpf has no published fixed picomatch release (upstream patched_versions is <0.0.0 as of 2026-11-18). All affected usages are devDependencies (tailwindcss, eslint-config-next) that never ship to production. Upstream fix proposals remain open; this exception is temporary and does not assert that the package is safe.",
     references: [
       "https://github.com/micromatch/picomatch/issues/247",
       "https://github.com/micromatch/picomatch/pull/238",
@@ -14,6 +20,23 @@ const EXCEPTIONS = [
     ],
   },
 ];
+
+function findingPaths(advisory) {
+  const findings = Array.isArray(advisory.findings) ? advisory.findings : [];
+  return findings.flatMap(finding => {
+    if (Array.isArray(finding.paths)) return finding.paths;
+    return finding.paths ? [finding.paths] : [];
+  });
+}
+
+// Returns true when the advisory cannot be proven unreachable from production:
+// unknown topology (no finding paths) is treated as production-reachable so the
+// audit gate fails closed.
+function isReachableFromProductionDependencies(advisory) {
+  const paths = findingPaths(advisory);
+  if (!paths.length) return true;
+  return paths.some(path => PROD_DEPENDENCY_ROOTS.has(String(path).split(">")[0]));
+}
 
 function classifyAdvisories(advisories, now = new Date()) {
   const blocking = [];
@@ -34,7 +57,10 @@ function classifyAdvisories(advisories, now = new Date()) {
       now.getTime() <= Date.parse(item.expiresAt)
     );
 
-    if (exception) {
+    const canExcept = exception &&
+      (!exception.devOnly || !isReachableFromProductionDependencies(advisory));
+
+    if (canExcept) {
       excepted.push({ advisory, exception });
     } else {
       blocking.push(advisory);

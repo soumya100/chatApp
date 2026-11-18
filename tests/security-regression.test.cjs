@@ -34,7 +34,35 @@ test("production dependency overrides retain the reviewed security floors", () =
   assert.equal(pkg.resolutions.uuid, "11.1.1");
   assert.equal(pkg.resolutions.zod, "4.6.6");
   assert.equal(pkg.resolutions.postcss, "8.5.33");
+  assert.equal(pkg.resolutions.picomatch, "4.0.7");
   assert.match(read("yarn.lock"), /postcss@8\.4\.31, postcss@8\.5\.33, postcss@\^8, postcss@\^8\.4\.47:\s+version "8\.5\.33"/);
+});
+
+test("the affected picomatch@2.3.2 artifact is gone and every picomatch range resolves to the newest release", () => {
+  const lock = read("yarn.lock");
+  assert.match(lock, /picomatch@[\d\^][^:]*:\s+version "4\.0\.7"/);
+  assert.doesNotMatch(lock, /picomatch-2\.\d+\.\d+\.tgz/);
+  assert.doesNotMatch(lock, /version "2\.3\.2"/);
+});
+
+test("workflows triggered by pull requests never reference repository secrets", () => {
+  const workflowDirectory = path.join(root, ".github", "workflows");
+  const workflowFiles = fs.readdirSync(workflowDirectory).filter(file => /\.ya?ml$/.test(file));
+  assert.ok(workflowFiles.length > 0, "workflow definitions must exist");
+  for (const file of workflowFiles) {
+    const source = fs.readFileSync(path.join(workflowDirectory, file), "utf8");
+    const runsOnPullRequests = /^ {2}pull_request(?:_target)?:/m.test(source);
+    if (runsOnPullRequests) {
+      assert.doesNotMatch(source, /secrets\.[A-Z_]+/, `${file} runs on pull_request and must not reference secrets`);
+    }
+  }
+});
+
+test("the production deploy gate only trusts CI runs from this repository's own main branch", () => {
+  const workflow = read(".github/workflows/deploy-production.yml");
+  assert.match(workflow, /github\.event\.workflow_run\.event == 'push'/);
+  assert.match(workflow, /github\.event\.workflow_run\.head_branch == 'main'/);
+  assert.match(workflow, /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/);
 });
 
 test("dashboard authorization remains enforced at the middleware boundary", () => {
