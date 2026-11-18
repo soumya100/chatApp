@@ -1,8 +1,13 @@
 name: Deploy ChatApp to Vercel Production
 
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows:
+      - ChatApp CI
+    types:
+      - completed
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -14,18 +19,24 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy and post-deploy smoke test
-    if: github.ref == 'refs/heads/main'
+    name: Deploy only after all ChatApp CI gates pass
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 30
     env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: \${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: \${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: \${{ secrets.VERCEL_PROJECT_ID }}
     steps:
-      - name: Checkout
+      - name: Checkout the tested commit
         uses: actions/checkout@v7
+        with:
+          ref: \${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -72,9 +83,9 @@ jobs:
       - name: Verify deployed application
         if: steps.config.outputs.configured == 'true'
         env:
-          CHATAPP_SMOKE_URL: ${{ steps.deploy.outputs.url }}
+          CHATAPP_SMOKE_URL: \${{ steps.deploy.outputs.url }}
         run: node scripts/smoke-test.cjs
 
       - name: Deployment was not configured
         if: steps.config.outputs.configured != 'true'
-        run: echo "No production deployment was attempted. CI and VAPT remain independent of Vercel secrets."
+        run: echo "No production deployment was attempted. Configure the production environment secrets to enable release."
