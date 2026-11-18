@@ -45,11 +45,27 @@ test("the affected picomatch@2.3.2 artifact is gone and every picomatch range re
   assert.doesNotMatch(lock, /version "2\.3\.2"/);
 });
 
-test("the dependency audit gate grants no exceptions for high/critical advisories", () => {
+test("dev-root high/critical advisories pass only through an explicit, expiring mitigation registry", () => {
   const audit = read("scripts/audit-dependencies.cjs");
-  assert.doesNotMatch(audit, /EXCEPTIONS\s*=/, "the gate must not whitelist specific advisories");
-  assert.doesNotMatch(audit, /canExcept/, "no per-advisory exception pathway may exist");
-  assert.match(audit, /no exceptions are granted/);
+  assert.match(audit, /KNOWN_DEV_MITIGATIONS\s*=\s*\[/, "mitigations must live in one explicit registry");
+  assert.match(audit, /expiresAt/, "every mitigation must carry an expiry field");
+  assert.match(audit, /Date\.parse/, "the gate must validate the expiry as a date");
+  assert.match(audit, /validateMitigationRegistry/, "the registry must be structurally validated at run time");
+  assert.doesNotMatch(audit, /reported, not blocking/, "the old warn-only dev downgrade must stay deleted");
+  assert.match(audit, /grant no exceptions/, "production-reachable high/critical findings are never excepted");
+
+  const { KNOWN_DEV_MITIGATIONS, validateMitigationRegistry } = require("../scripts/audit-dependencies.cjs");
+  assert.deepEqual(
+    validateMitigationRegistry(new Date()),
+    [],
+    "every registered mitigation must carry an id, package, written reason and a future expiry"
+  );
+  for (const entry of KNOWN_DEV_MITIGATIONS) {
+    assert.equal(typeof entry.id, "number", `${entry.package}: numeric advisory id required`);
+    assert.equal(typeof entry.package, "string", `${entry.id}: exact package name required`);
+    assert.ok(entry.reason.length >= 40, `${entry.package}: the reason must justify why no upgrade remediates it`);
+    assert.ok(Date.parse(entry.expiresAt) > Date.now(), `${entry.package}: the expiry must still be in the future`);
+  }
 });
 
 test("every third-party GitHub Action is pinned to an immutable commit SHA", () => {

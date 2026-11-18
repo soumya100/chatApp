@@ -17,13 +17,13 @@ cat "$AUDIT_TEST_STDERR" >&2
 exit "$AUDIT_TEST_STATUS"
 `;
 
-const DEV_ONLY_ADVISORY = {
+// The real registered mitigation: every path roots at devDependency tooling,
+// and the advisory is registered in KNOWN_DEV_MITIGATIONS with a future expiry.
+const REGISTERED_DEV_ADVISORY = {
   id: 1247710,
   module_name: "picomatch",
   severity: "high",
   url: "https://www.npmjs.com/advisories/1247710",
-  // The dev-only verdict is derived from real devDependency paths; production
-  // roots or unknown topology always block.
   findings: [
     {
       version: "4.0.7",
@@ -31,6 +31,21 @@ const DEV_ONLY_ADVISORY = {
         "tailwindcss>micromatch>picomatch",
         "eslint-config-next>@next/eslint-plugin-next>fast-glob>micromatch>picomatch",
       ],
+    },
+  ],
+};
+
+// Same shape, but no registry entry exists for this id/package pair, so the
+// fail-closed policy must block it instead of downgrading it to a warning.
+const UNREGISTERED_DEV_ADVISORY = {
+  id: 999999,
+  module_name: "left-pad",
+  severity: "high",
+  url: "https://www.npmjs.com/advisories/999999",
+  findings: [
+    {
+      version: "1.3.0",
+      paths: ["tailwindcss>micromatch>left-pad"],
     },
   ],
 };
@@ -87,7 +102,7 @@ test("audit gate passes when yarn reports no advisories", () => {
   assert.equal(result.status, 0);
   assert.equal(result.stdout.includes("Yarn audit returned 0 advisory record(s)."), true);
   assert.equal(
-    result.stdout.includes("Dependency audit gate passed: no production-reachable high/critical findings."),
+    result.stdout.includes("Dependency audit gate passed: no unmitigated high/critical findings."),
     true
   );
   assert.equal(result.stderr, "");
@@ -96,8 +111,8 @@ test("audit gate passes when yarn reports no advisories", () => {
 test("below-threshold severities are surfaced and never block", () => {
   const result = runAuditScript({
     stdout: output([
-      advisoryEvent({ ...DEV_ONLY_ADVISORY, severity: "moderate" }),
-      advisoryEvent({ ...DEV_ONLY_ADVISORY, severity: "low" }),
+      advisoryEvent({ ...REGISTERED_DEV_ADVISORY, severity: "moderate" }),
+      advisoryEvent({ ...REGISTERED_DEV_ADVISORY, severity: "low" }),
       summaryEvent(),
     ]),
     status: 0,
@@ -106,12 +121,12 @@ test("below-threshold severities are surfaced and never block", () => {
   assert.equal(result.status, 0);
   assert.equal(result.stdout.includes("Yarn audit returned 2 advisory record(s)."), true);
   assert.equal(result.stderr.includes("Below-threshold advisories reported (not blocking): 1 moderate, 1 low."), true);
-  assert.equal(result.stderr.includes("Production-reachable high/critical"), false);
+  assert.equal(result.stderr.includes("blocking the gate"), false);
 });
 
-test("a dev-only high advisory is reported with its dev roots and does not block", () => {
+test("a registered dev-root advisory passes loudly through its explicit expiring mitigation", () => {
   const result = runAuditScript({
-    stdout: output([advisoryEvent(DEV_ONLY_ADVISORY), summaryEvent()]),
+    stdout: output([advisoryEvent(REGISTERED_DEV_ADVISORY), summaryEvent()]),
     status: 0,
   });
 
@@ -119,31 +134,50 @@ test("a dev-only high advisory is reported with its dev roots and does not block
   assert.equal(result.stdout.includes("Yarn audit returned 1 advisory record(s)."), true);
   assert.equal(
     result.stderr.includes(
-      "DEV-ONLY ADVISORY (reported, not blocking): 1247710: picomatch (high) is reachable only through " +
-      "devDependency root(s) [tailwindcss, eslint-config-next]"
+      "MITIGATED DEV-ROOT ADVISORY: 1247710: picomatch (high) is reachable only through " +
+      "devDependency root(s) [tailwindcss, eslint-config-next] and is registered in KNOWN_DEV_MITIGATIONS."
     ),
     true
   );
+  assert.match(result.stderr, /Mitigation expires: \d{4}-\d{2}-\d{2}/, "the expiry must be printed on every run");
   assert.match(result.stderr, /advisories\/1247710/, "the advisory URL is reported");
   assert.equal(
     result.stderr.includes(
-      "DEV-ONLY ADVISORY SUMMARY: 1 high/critical advisory(ies) reported above do not "
+      "MITIGATION SUMMARY: 1 high/critical advisory(ies) pass only through an " +
+      "explicit, expiring registry entry."
     ),
     true,
-    "the dev-only policy summary must state why the finding does not block"
+    "the mitigation summary must state why the finding does not block"
   );
   assert.equal(result.stdout.includes("Dependency audit gate passed"), true);
+});
+
+test("an unregistered dev-root high advisory blocks with exit code 1", () => {
+  const result = runAuditScript({
+    stdout: output([advisoryEvent(UNREGISTERED_DEV_ADVISORY), summaryEvent()]),
+    status: 0,
+  });
+
+  assert.equal(result.status, 1);
+  assert.equal(
+    result.stderr.includes(
+      "UNMITIGATED DEV-ROOT ADVISORY (blocking): 999999: left-pad (high) is rooted at " +
+      "[tailwindcss] but has no valid KNOWN_DEV_MITIGATIONS entry"
+    ),
+    true
+  );
+  assert.equal(result.stdout.includes("Dependency audit gate passed"), false);
 });
 
 test("production-reachable high/critical advisories fail the gate with exit code 1", () => {
   const result = runAuditScript({
     stdout: output([
-      advisoryEvent(DEV_ONLY_ADVISORY),
+      advisoryEvent(REGISTERED_DEV_ADVISORY),
       advisoryEvent({
-        id: 999999,
+        id: 888888,
         module_name: "postcss",
         severity: "high",
-        url: "https://www.npmjs.com/advisories/999999",
+        url: "https://www.npmjs.com/advisories/888888",
         findings: [{ version: "8.4.31", paths: ["next>postcss"] }],
       }),
       summaryEvent(),
@@ -154,13 +188,18 @@ test("production-reachable high/critical advisories fail the gate with exit code
   assert.equal(result.status, 1);
   assert.equal(result.stdout.includes("Yarn audit returned 2 advisory record(s)."), true);
   assert.equal(
-    result.stderr.includes("Production-reachable high/critical dependency advisories (no exceptions are granted):"),
+    result.stderr.includes(
+      "High/critical dependency advisories are blocking the gate (production-reachable findings grant no exceptions):"
+    ),
     true
   );
   assert.equal(
-    result.stderr.includes("- 999999: postcss (high): https://www.npmjs.com/advisories/999999"),
+    result.stderr.includes("- 888888: postcss (high) (production-reachable): https://www.npmjs.com/advisories/888888"),
     true
   );
+  // The dev-root picomatch finding is still reported through its mitigation,
+  // but the production-reachable postcss finding fails the gate regardless.
+  assert.equal(result.stderr.includes("MITIGATED DEV-ROOT ADVISORY"), true);
   assert.equal(result.stdout.includes("Dependency audit gate passed"), false);
 });
 
@@ -175,7 +214,7 @@ test("a blocking advisory without a URL reports no advisory URL", () => {
 
   assert.equal(result.status, 1);
   assert.equal(
-    result.stderr.includes("- 1234567: lodash (critical): no advisory URL"),
+    result.stderr.includes("- 1234567: lodash (critical) (production-reachable): no advisory URL"),
     true
   );
 });
@@ -199,7 +238,7 @@ test("fails closed when the audit stream is truncated and auditSummary never arr
   // without the terminal auditSummary record the advisory list is partial,
   // so the gate must fail closed instead of passing on the prefix.
   const result = runAuditScript({
-    stdout: output([advisoryEvent(DEV_ONLY_ADVISORY)]),
+    stdout: output([advisoryEvent(REGISTERED_DEV_ADVISORY)]),
     status: 0,
   });
 
@@ -243,10 +282,10 @@ test("a non-zero yarn exit with no advisories fails closed", () => {
   assert.equal(result.stderr.includes("network unavailable"), true);
 });
 
-test("a non-zero yarn exit with only reported advisories passes with a warning", () => {
+test("a non-zero yarn exit with only below-threshold advisories passes with a warning", () => {
   const result = runAuditScript({
     stdout: output([
-      advisoryEvent({ ...DEV_ONLY_ADVISORY, severity: "moderate" }),
+      advisoryEvent({ ...REGISTERED_DEV_ADVISORY, severity: "moderate" }),
       summaryEvent(),
     ]),
     status: 1,
@@ -272,7 +311,7 @@ test("unparsable output lines are reported instead of being silently dropped", (
   const result = runAuditScript({
     stdout: output([
       "human readable progress noise",
-      advisoryEvent(DEV_ONLY_ADVISORY),
+      advisoryEvent(REGISTERED_DEV_ADVISORY),
       summaryEvent(),
     ]),
     status: 0,
@@ -286,7 +325,7 @@ test("unparsable output lines are reported instead of being silently dropped", (
   assert.equal(result.stdout.includes("Dependency audit gate passed"), true);
 });
 
-test("unknown topology blocks even when the module is otherwise dev-only", () => {
+test("unknown topology blocks even when the module is registered as dev-only", () => {
   const result = runAuditScript({
     stdout: output([
       advisoryEvent({
@@ -301,6 +340,11 @@ test("unknown topology blocks even when the module is otherwise dev-only", () =>
   });
 
   assert.equal(result.status, 1);
-  assert.equal(result.stderr.includes("DEV-ONLY ADVISORY"), false);
+  assert.equal(result.stderr.includes("MITIGATED DEV-ROOT ADVISORY"), false);
+  assert.equal(
+    result.stderr.includes("- 1247710: picomatch (high) (production-reachable): https://www.npmjs.com/advisories/1247710"),
+    true,
+    "without paths the gate must assume production reachability and block"
+  );
   assert.equal(result.stdout.includes("Dependency audit gate passed"), false);
 });
