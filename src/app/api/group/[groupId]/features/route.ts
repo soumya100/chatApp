@@ -90,7 +90,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
     const userId = session?.user?.id
     if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
 
-    const parsed = schema.safeParse(await req.json())
+    let body: unknown
+    try {
+      body = await req.json()
+    } catch {
+      return Response.json({ message: "Request body must be valid JSON" }, { status: 400 })
+    }
+    const parsed = schema.safeParse(body)
     if (!parsed.success) return Response.json({ message: parsed.error.issues[0]?.message || "Invalid request" }, { status: 400 })
 
     const rawGroup = await db.get(`group:${groupId}`)
@@ -99,7 +105,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
     if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
 
     const action = parsed.data.action
-    const isAdmin = (group.adminIds || [group.creatorId]).includes(userId)
+    const isAdmin = (group.adminIds?.length ? group.adminIds : [group.creatorId]).includes(userId)
     const adminOnly = (action === "createPoll" && group.settings?.onlyAdminsCanCreatePolls) ||
       (action === "createEvent" && group.settings?.onlyAdminsCanCreateEvents) ||
       (action === "announce" && (group.settings?.announcementsOnly || group.settings?.onlyAdminsCanSendMessages))
