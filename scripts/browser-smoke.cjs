@@ -24,6 +24,32 @@ const engines = [
   ["webkit", webkit],
 ];
 
+async function togglePasswordVisibility(page, selector, reveal, engine) {
+  // React hydrates after the first paint, and a click delivered before
+  // hydration completes is silently dropped (notably against a cold dev
+  // server that is still compiling the page). The toggle is therefore
+  // asserted through a bounded retry loop instead of a single racy click.
+  const label = reveal ? "Show password" : "Hide password";
+  const expectedType = reveal ? "text" : "password";
+  const expectedAction = reveal ? "reveal" : "hide";
+  const deadline = Date.now() + 20_000;
+  let lastType = "";
+  while (Date.now() < deadline) {
+    await page.getByRole("button", { name: label }).click();
+    try {
+      await page.waitForFunction(
+        ([inputSelector, type]) => document.querySelector(inputSelector)?.getAttribute("type") === type,
+        [selector, expectedType],
+        { timeout: 2_000 }
+      );
+      return;
+    } catch {
+      lastType = await page.locator(selector).getAttribute("type");
+    }
+  }
+  assert.equal(lastType, expectedType, `${engine}: password visibility should ${expectedAction} the input`);
+}
+
 async function exerciseBrowser(name, browserType) {
   const browser = await browserType.launch({ headless: true, args: name === "chromium" ? ["--no-sandbox"] : [] });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
@@ -36,12 +62,10 @@ async function exerciseBrowser(name, browserType) {
     await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: /welcome to chat\+/i }).waitFor();
     await page.locator('input[type="email"]').waitFor({ state: "visible" });
-    const password = page.locator('input[autocomplete="current-password"]');
-    await password.waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "Show password" }).click();
-    assert.equal(await password.getAttribute("type"), "text", `${name}: password visibility should reveal the input`);
-    await page.getByRole("button", { name: "Hide password" }).click();
-    assert.equal(await password.getAttribute("type"), "password", `${name}: password visibility should hide the input`);
+    const passwordSelector = 'input[autocomplete="current-password"]';
+    await page.locator(passwordSelector).waitFor({ state: "visible" });
+    await togglePasswordVisibility(page, passwordSelector, true, name);
+    await togglePasswordVisibility(page, passwordSelector, false, name);
 
     const loginWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     assert.ok(loginWidth <= 391, `${name}: login page overflows mobile viewport: ${loginWidth}px`);
