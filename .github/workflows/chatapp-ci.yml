@@ -116,7 +116,6 @@ jobs:
       - name: Chromium, Firefox and WebKit UI smoke
         env:
           CHATAPP_SMOKE_URL: http://127.0.0.1:3100
-          NODE_PATH: ${{ env.NODE_PATH }}
         run: |
           export NODE_PATH="$(npm root -g)"
           yarn test:browser
@@ -125,9 +124,10 @@ jobs:
         continue-on-error: true
         run: |
           docker run --rm --network host \
+            --workdir /zap/wrk \
             -v "${{ github.workspace }}:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://127.0.0.1:3100 -m 2 -J zap-report.json -I
+            zap-baseline.py -t http://127.0.0.1:3100 -m 2 -J /zap/wrk/zap-report.json -I
 
       - name: Upload ZAP report
         if: always()
