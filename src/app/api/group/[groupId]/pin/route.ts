@@ -36,7 +36,8 @@ end
 return nil
 `
 
-export async function POST(req: Request, { params }: { params: { groupId: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ groupId: string }> }) {
+  const { groupId } = await params
   try {
     const session = await getServerSession(authOptions)
     const userId = session?.user?.id
@@ -44,7 +45,6 @@ export async function POST(req: Request, { params }: { params: { groupId: string
     const parsed = schema.safeParse(await req.json())
     if (!parsed.success) return Response.json({ message: "Invalid pin request" }, { status: 400 })
 
-    const groupId = params.groupId
     const rawGroup = await db.get(`group:${groupId}`)
     if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
     const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
@@ -66,16 +66,17 @@ export async function POST(req: Request, { params }: { params: { groupId: string
   }
 }
 
-export async function GET(_req: Request, { params }: { params: { groupId: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ groupId: string }> }) {
+  const { groupId } = await params
   try {
     const session = await getServerSession(authOptions)
     const userId = session?.user?.id
     if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
-    const rawGroup = await db.get(`group:${params.groupId}`)
+    const rawGroup = await db.get(`group:${groupId}`)
     if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
     const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
     if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
-    const rows = await db.zrange(`chat:group--${params.groupId}:messages`, 0, -1) as unknown[]
+    const rows = await db.zrange(`chat:group--${groupId}:messages`, 0, -1) as unknown[]
     const messages: Message[] = []
     for (const row of rows) {
       try {
