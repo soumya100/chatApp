@@ -38,6 +38,19 @@ test("ZAP report fails closed when an alert has an invalid or missing risk code"
   assert.throws(() => inspectReport({ site: [{ alerts: {} }] }), /alerts must be an array/);
 });
 
+test("an empty scan (no site entries) cannot pass the gate", () => {
+  // A scan that never really ran can be serialized as a structurally valid
+  // report; zero sites must fail the gate instead of reading as a pass.
+  assert.throws(() => inspectReport({ site: [] }), /no site entries/);
+});
+
+test("malformed site and alert elements fail with descriptive schema errors", () => {
+  assert.throws(() => inspectReport({ site: [null] }), /site entries must be objects/);
+  assert.throws(() => inspectReport({ site: ["http://localhost"] }), /site entries must be objects/);
+  assert.throws(() => inspectReport({ site: [{ alerts: [null] }] }), /site.alerts entries must be objects/);
+  assert.throws(() => inspectReport({ site: [{ alerts: ["3"] }] }), /site.alerts entries must be objects/);
+});
+
 test("CLI fails closed with exit code 1 for an empty-string risk code", () => {
   const fs = require("node:fs");
   const os = require("node:os");
@@ -55,6 +68,35 @@ test("CLI fails closed with exit code 1 for an empty-string risk code", () => {
     assert.equal(result.status, 1, "unclassified finding must fail the gate");
     assert.doesNotMatch(result.stdout, /ZAP gate passed/);
     assert.match(result.stderr, /VAPT report validation failed/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("CLI fails closed on an empty scan and never echoes raw report bytes", () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { spawnSync } = require("node:child_process");
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "zap-gate-"));
+  try {
+    const reportPath = path.join(tempDir, "zap-report.json");
+    const script = [path.join(__dirname, "..", "scripts", "validate-zap-report.cjs"), reportPath];
+
+    // A structurally valid but empty report must not read as a clean scan.
+    fs.writeFileSync(reportPath, JSON.stringify({ site: [] }));
+    const empty = spawnSync(process.execPath, script, { encoding: "utf8" });
+    assert.equal(empty.status, 1, "an empty scan must fail the gate");
+    assert.doesNotMatch(empty.stdout, /ZAP gate passed/);
+    assert.match(empty.stderr, /no site entries/);
+
+    // JSON.parse embeds raw file bytes in its SyntaxError text; the failure
+    // path must surface the clean schema error instead of leaking them.
+    fs.writeFileSync(reportPath, '{"site": [{"@name": "x\r\nERROR forged line"');
+    const broken = spawnSync(process.execPath, script, { encoding: "utf8" });
+    assert.equal(broken.status, 1);
+    assert.equal(broken.stderr.includes("forged"), false, "raw report bytes must never reach the CI log");
+    assert.match(broken.stderr, /not valid JSON/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

@@ -244,20 +244,32 @@ jobs:
           CHATAPP_SMOKE_URL: http://127.0.0.1:3100
         run: node scripts/wait-for-server.cjs
 
+      - name: Create the isolated scanner network
+        run: docker network create --driver bridge zap-scan-net
+
       - name: Run OWASP ZAP passive baseline scan
         id: zap
         continue-on-error: true
         # The image is pinned by digest: mutable tags would let a republished
-        # image change what runs inside CI. --network host is required because
-        # the scanner targets the ephemeral server started on the runner
-        # (127.0.0.1:3100); the container is disposable and the image digest
-        # is pinned, so root inside it has no persistent effects.
+        # image change what runs inside CI. The scanner runs on a dedicated
+        # bridge network, so its control API is never published to the host —
+        # the packaged ZAP scan scripts hard-code api.disablekey=true, so
+        # network isolation is the only effective control. The API address
+        # restriction is additionally narrowed back to the container's own
+        # loopback via -z (ZAP applies the last -config value for a key, and
+        # the in-container scan scripts talk to the API from 127.0.0.1, so the
+        # scan still works while host and other-container requests are
+        # rejected). The target is reached through the host gateway, so the
+        # application under test can no longer reach the scanner API to
+        # suppress its own findings.
         run: |
-          docker run --rm --network host --user root \
+          docker run --rm --network zap-scan-net --user root \
+            --add-host=host.docker.internal:host-gateway \
             --workdir /zap/wrk \
             -v "${{ github.workspace }}:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af \
-            zap-baseline.py -t http://127.0.0.1:3100 -m 3 -J zap-report.json -I
+            zap-baseline.py -t http://host.docker.internal:3100 -m 3 -J zap-report.json -I \
+              -z "-config api.addrs.addr.name=127.0.0.1 -config api.addrs.addr.regex=false"
 
       - name: Validate ZAP report and block High/Critical findings
         if: always()
@@ -276,12 +288,13 @@ jobs:
         if: steps.zap.outcome == 'failure'
         run: exit 1
 
-      - name: Stop production server
+      - name: Stop production server and remove the scanner network
         if: always()
         run: |
           if [ -f /tmp/chatapp-vapt.pid ]; then
             kill "$(cat /tmp/chatapp-vapt.pid)" || true
           fi
+          docker network rm zap-scan-net || true
 
       - name: Print server log on failure
         if: failure()
@@ -397,16 +410,23 @@ jobs:
           CHATAPP_SMOKE_URL: http://127.0.0.1:3100
         run: node scripts/wait-for-server.cjs
 
+      - name: Create the isolated scanner network
+        run: docker network create --driver bridge zap-scan-net
+
       - name: Run OWASP ZAP active scan
         id: zap-active
         continue-on-error: true
-        # Digest-pinned for the same reason as the passive scan above.
+        # Digest-pinned and bridge-isolated for the same reasons as the
+        # passive scan above: the control API is never published to the host
+        # and is restricted to the container's own loopback.
         run: |
-          docker run --rm --network host --user root \
+          docker run --rm --network zap-scan-net --user root \
+            --add-host=host.docker.internal:host-gateway \
             --workdir /zap/wrk \
             -v "${{ github.workspace }}:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af \
-            zap-full-scan.py -t http://127.0.0.1:3100 -m 5 -J zap-active-report.json -I
+            zap-full-scan.py -t http://host.docker.internal:3100 -m 5 -J zap-active-report.json -I \
+              -z "-config api.addrs.addr.name=127.0.0.1 -config api.addrs.addr.regex=false"
 
       - name: Validate active-scan report and block High/Critical findings
         if: always()
@@ -425,9 +445,10 @@ jobs:
         if: steps.zap-active.outcome == 'failure'
         run: exit 1
 
-      - name: Stop production server
+      - name: Stop production server and remove the scanner network
         if: always()
         run: |
           if [ -f /tmp/chatapp-vapt-active.pid ]; then
             kill "$(cat /tmp/chatapp-vapt-active.pid)" || true
           fi
+          docker network rm zap-scan-net || true

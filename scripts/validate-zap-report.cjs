@@ -16,11 +16,23 @@ function inspectReport(report) {
   if (!report || !Array.isArray(report.site)) {
     throw new Error("Unexpected ZAP JSON schema: site[] is missing");
   }
+  if (!report.site.length) {
+    // A scan that never really ran can still be serialized as a structurally
+    // valid report; treating zero sites as a clean scan would let a
+    // suppressed scan pass the release gate.
+    throw new Error("ZAP report contains no site entries; an empty scan cannot pass the gate");
+  }
   const findings = report.site.flatMap(site => {
+    if (!site || typeof site !== "object") {
+      throw new Error("Invalid ZAP report: site entries must be objects");
+    }
     if (site.alerts !== undefined && !Array.isArray(site.alerts)) {
       throw new Error("Invalid ZAP report: site.alerts must be an array");
     }
     return (site.alerts || []).map(alert => {
+      if (!alert || typeof alert !== "object") {
+        throw new Error("Invalid ZAP report: site.alerts entries must be objects");
+      }
       const raw = alert.riskcode ?? alert.riskCode;
       const risk = typeof raw === "number"
         ? raw
@@ -48,7 +60,16 @@ function inspectReport(report) {
 
 function validateFile(reportPath) {
   if (!fs.existsSync(reportPath)) throw new Error("ZAP report is missing: " + reportPath);
-  return inspectReport(JSON.parse(fs.readFileSync(reportPath, "utf8")));
+  let report;
+  try {
+    report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  } catch {
+    // JSON.parse embeds a snippet of the raw file in its SyntaxError text on
+    // Node 18+. The report is attacker-influenced content, so those bytes
+    // must never reach the CI log through error.message.
+    throw new Error("ZAP report is not valid JSON");
+  }
+  return inspectReport(report);
 }
 
 if (require.main === module) {
@@ -67,7 +88,10 @@ if (require.main === module) {
       console.log("ZAP gate passed: no High/Critical findings.");
     }
   } catch (error) {
-    console.error("VAPT report validation failed: " + error.message);
+    // The failure path must respect the same invariant as the success path:
+    // nothing attacker-influenced reaches the CI log unsanitized.
+    const message = error && error.message ? error.message : String(error);
+    console.error("VAPT report validation failed: " + sanitizeLogField(message, 500));
     process.exitCode = 1;
   }
 }
