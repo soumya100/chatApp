@@ -74,13 +74,13 @@ test("group-management controls use the existing custom confirmation dialog", ()
   for (const term of ["promote", "demote", "remove", "DialogUI", "confirmRemoveMember", "toast.error", "onGroupUpdated"]) {
     assert.ok(source.includes(term), `member manager is missing ${term}`);
   }
-  assert.doesNotMatch(source, /\\b(?:window\\.)?(?:alert|confirm|prompt)\\s*\\(/);
+  assert.doesNotMatch(source, /\b(?:window\\.)?(?:alert|confirm|prompt)\\s*\\(/);
 });
 
 test("application source contains no native browser alert, confirm, or prompt calls", () => {
   const sourceRoot = path.join(root, "src");
-  const sourceFiles = walk(sourceRoot).filter(file => /\\.(?:[cm]?[jt]sx?)$/.test(file));
-  const nativeDialogCall = /\\b(?:(?:window|globalThis)\\s*\\.\\s*)?(?:alert|confirm|prompt)\\s*\\(/;
+  const sourceFiles = walk(sourceRoot).filter(file => /\.(?:[cm]?[jt]sx?)$/.test(file));
+  const nativeDialogCall = /\b(?:(?:window|globalThis)\\s*\\.\\s*)?(?:alert|confirm|prompt)\\s*\\(/;
 
   for (const file of sourceFiles) {
     const source = fs.readFileSync(file, "utf8");
