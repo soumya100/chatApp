@@ -130,6 +130,7 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
   }, [members, query, group.creatorId])
 
   return (
+    <>
     <Dialog open={isOpen} onClose={onClose} className="relative z-50">
       <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-md" aria-hidden="true" />
       <div className="fixed inset-0 z-10 flex items-center justify-center overflow-y-auto p-0 sm:p-5">
@@ -215,6 +216,7 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
           </div>
         </div>
       </DialogUI>
+    </>
   )
 }
 
