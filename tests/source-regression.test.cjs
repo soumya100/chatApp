@@ -69,10 +69,22 @@ test("member profile endpoint applies membership authorization and a field allow
   assert.doesNotMatch(source, /return\s*\{[^}]*email:/s);
 });
 
-test("group-management controls include role-aware actions and failure feedback", () => {
+test("group-management controls use the existing custom confirmation dialog", () => {
   const source = read("src/components/Chat/GroupMembersManager.tsx");
-  for (const term of ["promote", "demote", "remove", "window.confirm", "toast.error", "onGroupUpdated"]) {
+  for (const term of ["promote", "demote", "remove", "DialogUI", "confirmRemoveMember", "toast.error", "onGroupUpdated"]) {
     assert.ok(source.includes(term), `member manager is missing ${term}`);
+  }
+  assert.doesNotMatch(source, /\\b(?:window\\.)?(?:alert|confirm|prompt)\\s*\\(/);
+});
+
+test("application source contains no native browser alert, confirm, or prompt calls", () => {
+  const sourceRoot = path.join(root, "src");
+  const sourceFiles = walk(sourceRoot).filter(file => /\\.(?:[cm]?[jt]sx?)$/.test(file));
+  const nativeDialogCall = /\\b(?:(?:window|globalThis)\\s*\\.\\s*)?(?:alert|confirm|prompt)\\s*\\(/;
+
+  for (const file of sourceFiles) {
+    const source = fs.readFileSync(file, "utf8");
+    assert.doesNotMatch(source, nativeDialogCall, `Native browser dialog call found in ${path.relative(root, file)}`);
   }
 });
 
