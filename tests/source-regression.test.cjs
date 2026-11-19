@@ -69,11 +69,14 @@ test("member profile endpoint applies membership authorization and a field allow
   assert.doesNotMatch(source, /return\s*\{[^}]*email:/s);
 });
 
-test("group-management controls use the existing custom confirmation dialog", () => {
+test("group member removal confirmation closes independently from the parent dialog", () => {
   const source = read("src/components/Chat/GroupMembersManager.tsx");
   for (const term of ["promote", "demote", "remove", "DialogUI", "confirmRemoveMember", "toast.error", "onGroupUpdated"]) {
     assert.ok(source.includes(term), `member manager is missing ${term}`);
   }
+  assert.match(source, /onClose=\{\(\)\s*=>\s*\{\s*if\s*\(!isRemoveDialogOpen\)\s*onClose\(\)/);
+  assert.match(source, /closeHandler=\{\(open\)\s*=>\s*\{\s*setIsRemoveDialogOpen\(open\)/);
+  assert.match(source, /onClick=\{\(\)\s*=>\s*\{\s*setIsRemoveDialogOpen\(false\);\s*setPendingRemovalId\(null\)\s*\}\}/);
   assert.doesNotMatch(source, /\b(?:window\.)?(?:alert|confirm|prompt)\s*\(/);
 });
 
