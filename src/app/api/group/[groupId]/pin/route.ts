@@ -1,5 +1,6 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { resolveAdminIds } from "@/lib/group"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
 import { getServerSession } from "next-auth"
@@ -42,14 +43,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
     const session = await getServerSession(authOptions)
     const userId = session?.user?.id
     if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
-    const parsed = schema.safeParse(await req.json())
+    let body: unknown
+    try {
+      body = await req.json()
+    } catch {
+      return Response.json({ message: "Request body must be valid JSON" }, { status: 400 })
+    }
+    const parsed = schema.safeParse(body)
     if (!parsed.success) return Response.json({ message: "Invalid pin request" }, { status: 400 })
 
     const rawGroup = await db.get(`group:${groupId}`)
     if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
     const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
     if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
-    const isAdmin = (group.adminIds || [group.creatorId]).includes(userId)
+    const isAdmin = resolveAdminIds(group).includes(userId)
     if (group.settings?.onlyAdminsCanPinMessages && !isAdmin) return Response.json({ message: "Only admins can pin messages" }, { status: 403 })
 
     const key = `chat:group--${groupId}:messages`

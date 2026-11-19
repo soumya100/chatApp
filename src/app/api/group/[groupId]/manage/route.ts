@@ -1,5 +1,6 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { resolveAdminIds } from "@/lib/group"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
 import { getServerSession } from "next-auth"
@@ -78,7 +79,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
         const actorId = session?.user?.id
         if (!actorId) return Response.json({ message: "Unauthorized" }, { status: 401 })
 
-        const parsed = schema.safeParse(await req.json())
+        let body: unknown
+        try {
+            body = await req.json()
+        } catch {
+            return Response.json({ message: "Request body must be valid JSON" }, { status: 400 })
+        }
+        const parsed = schema.safeParse(body)
         if (!parsed.success) {
             return Response.json({ message: parsed.error.issues[0]?.message || "Invalid request" }, { status: 400 })
         }
@@ -96,7 +103,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
             const expectedRaw = typeof raw === "string" ? raw : JSON.stringify(raw)
             const group = decode<Group>(raw)
             const memberIds = group.memberIds || []
-            const adminIds = group.adminIds || [group.creatorId]
+            const adminIds = resolveAdminIds(group)
             const isMember = memberIds.includes(actorId)
             const isAdmin = adminIds.includes(actorId)
             if (!isMember) return Response.json({ message: "You are not a member of this group" }, { status: 403 })

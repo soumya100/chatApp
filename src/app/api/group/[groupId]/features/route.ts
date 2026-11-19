@@ -1,5 +1,6 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { resolveAdminIds } from "@/lib/group"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
 import { getServerSession } from "next-auth"
@@ -79,8 +80,23 @@ else
   return cjson.encode({error = "Unsupported action"})
 end
 
-redis.call("SET", KEYS[1], cjson.encode(features))
-return cjson.encode({features = features, result = result})
+-- Redis' bundled cjson maps an empty Lua table to {}. Normalize the
+-- list-valued fields explicitly so empty lists keep their JSON array contract.
+local function normalizeFeatureArrays(encoded)
+  encoded = string.gsub(encoded, '"polls":{}', '"polls":[]')
+  encoded = string.gsub(encoded, '"events":{}', '"events":[]')
+  encoded = string.gsub(encoded, '"announcements":{}', '"announcements":[]')
+  encoded = string.gsub(encoded, '"votes":{}', '"votes":[]')
+  encoded = string.gsub(encoded, '"going":{}', '"going":[]')
+  encoded = string.gsub(encoded, '"maybe":{}', '"maybe":[]')
+  encoded = string.gsub(encoded, '"not%-going":{}', '"not-going":[]')
+  return encoded
+end
+
+local encodedFeatures = normalizeFeatureArrays(cjson.encode(features))
+local encodedResult = normalizeFeatureArrays(cjson.encode(result))
+redis.call("SET", KEYS[1], encodedFeatures)
+return '{"features":' .. encodedFeatures .. ',"result":' .. encodedResult .. '}'
 `
 
 export async function POST(req: Request, { params }: { params: Promise<{ groupId: string }> }) {
@@ -90,7 +106,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
     const userId = session?.user?.id
     if (!userId) return Response.json({ message: "Unauthorized" }, { status: 401 })
 
-    const parsed = schema.safeParse(await req.json())
+    let body: unknown
+    try {
+      body = await req.json()
+    } catch {
+      return Response.json({ message: "Request body must be valid JSON" }, { status: 400 })
+    }
+    const parsed = schema.safeParse(body)
     if (!parsed.success) return Response.json({ message: parsed.error.issues[0]?.message || "Invalid request" }, { status: 400 })
 
     const rawGroup = await db.get(`group:${groupId}`)
@@ -99,7 +121,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
     if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
 
     const action = parsed.data.action
-    const isAdmin = (group.adminIds || [group.creatorId]).includes(userId)
+    const isAdmin = resolveAdminIds(group).includes(userId)
     const adminOnly = (action === "createPoll" && group.settings?.onlyAdminsCanCreatePolls) ||
       (action === "createEvent" && group.settings?.onlyAdminsCanCreateEvents) ||
       (action === "announce" && (group.settings?.announcementsOnly || group.settings?.onlyAdminsCanSendMessages))

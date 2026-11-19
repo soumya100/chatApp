@@ -6,8 +6,14 @@ export const runtime = "nodejs"
 
 const MAX_UPLOAD_SIZE = 30 * 1024 * 1024
 
+// Exact MIME allow-list. Wildcards like "image/*" are deliberately avoided:
+// an image/* entry also admits image/svg+xml, and SVG served inline executes
+// script (stored XSS). Every entry below renders as inert raster media.
 const ALLOWED_CONTENT_TYPES = [
-    "image/*",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
     "video/*",
     "audio/*",
     "application/pdf",
@@ -18,9 +24,33 @@ const ALLOWED_CONTENT_TYPES = [
     "application/x-zip-compressed"
 ]
 
+// Defence in depth: browser-active documents are rejected even if a future
+// edit accidentally re-introduces a permissive wildcard above.
+const FORBIDDEN_CONTENT_TYPES = new Set([
+    "image/svg+xml",
+    "text/html",
+    "application/xhtml+xml"
+])
+
+function assertAllowedContentType(candidate: unknown): void {
+    const type = String(candidate ?? "").split(";")[0].trim().toLowerCase()
+    if (type && FORBIDDEN_CONTENT_TYPES.has(type)) {
+        throw new Error("This file format is not allowed. Browser-executable document types (SVG/HTML/XHTML) are rejected.")
+    }
+}
+
 export async function POST(request: Request) {
     try {
         const body = await request.json()
+
+        // The Vercel Blob client sends the file's content type when requesting
+        // the upload token and when reporting the completed upload. Both
+        // checkpoints are screened so a browser-active document can never
+        // obtain a token or be confirmed into storage.
+        assertAllowedContentType(body?.payload?.contentType)
+        if (body?.type === "blob.upload-completed" && Array.isArray(body?.payload?.files)) {
+            for (const file of body.payload.files) assertAllowedContentType(file?.contentType)
+        }
 
         const jsonResponse = await handleUpload({
             body,

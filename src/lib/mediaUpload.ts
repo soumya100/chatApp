@@ -29,7 +29,9 @@ export async function uploadMedia(file: File): Promise<UploadedMediaResponse> {
     'application/x-zip-compressed',
     'application/octet-stream',
   ])
-  const isSupportedMedia = /^(image|video|audio)\//.test(mimeType)
+  // Exact raster image types only: a bare image/ prefix would admit
+  // image/svg+xml, which executes script when the blob URL is opened inline.
+  const isSupportedMedia = /^(image\/(png|jpeg|gif|webp)|video\/|audio\/)/.test(mimeType)
   const isSupportedDocument =
     allowedDocumentExtensions.has(extension) &&
     (!mimeType || allowedDocumentMimeTypes.has(mimeType))
@@ -56,11 +58,21 @@ export async function uploadMedia(file: File): Promise<UploadedMediaResponse> {
 
   let mediaType: UploadedMediaResponse["mediaType"] = "file"
 
-  if (mimeType.startsWith("image/") || /^(png|jpe?g|gif|webp|avif)$/.test(extension)) {
+  // The MIME type decides the classification; the file extension is only a
+  // fallback for browsers that sent no usable MIME type. Extensions such as
+  // `.webm` and `.mp4` can carry either audio or video, so consulting them
+  // first would misclassify e.g. an audio/webm voice note as video.
+  if (mimeType.startsWith("image/")) {
     mediaType = "image"
-  } else if (mimeType.startsWith("video/") || /^(mp4|webm|mov|m4v)$/.test(extension)) {
+  } else if (mimeType.startsWith("video/")) {
     mediaType = "video"
-  } else if (mimeType.startsWith("audio/") || /^(mp3|wav|ogg|webm|m4a|aac)$/.test(extension)) {
+  } else if (mimeType.startsWith("audio/")) {
+    mediaType = "audio"
+  } else if (/^(png|jpe?g|gif|webp|avif)$/.test(extension)) {
+    mediaType = "image"
+  } else if (/^(mp4|mov|m4v|webm)$/.test(extension)) {
+    mediaType = "video"
+  } else if (/^(mp3|wav|ogg|webm|m4a|aac)$/.test(extension)) {
     mediaType = "audio"
   }
 

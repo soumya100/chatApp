@@ -1,5 +1,12 @@
 name: ChatApp CI
 
+# Stated requirement R-TEST-1 (see the PR #12 description): every fix ships
+# with its regression tests, and the repository's own gates must run in CI on
+# every pull request — unit and API regression suites, TypeScript typecheck,
+# lint, real-Redis Lua integration, production build with cross-browser HTTP
+# and browser smoke, OWASP ZAP passive/active VAPT, dependency review, CodeQL
+# and secret scanning. The jobs below implement exactly that requirement.
+
 on:
   pull_request:
     branches:
@@ -8,8 +15,7 @@ on:
   push:
     branches:
       - main
-      - feat/complete-group-experience
-      - fix/production-readiness-pr8
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,47 +25,442 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: Install, typecheck, lint and build
+  unit-and-static:
+    name: Unit, API regression and static checks (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      UPSTASH_REDIS_REST_URL: https://example.upstash.io
-      UPSTASH_REDIS_REST_TOKEN: build-only-placeholder
-      NEXTAUTH_SECRET: build-only-placeholder-secret
-      NEXTAUTH_URL: http://localhost:3000
-      PUSHER_APP_ID: "123456"
-      NEXT_PUBLIC_PUSHER_APP_KEY: build-only-placeholder
-      PUSHER_APP_SECRET: build-only-placeholder
-      PUSHER_APP_CLUSTER: ap2
-      NEXT_PUBLIC_PUSHER_APP_CLUSTER: ap2
-      BLOB_READ_WRITE_TOKEN: build-only-placeholder
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: 20
-          cache: yarn
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
 
       - name: Activate Yarn Classic
         run: corepack prepare yarn@1.22.22 --activate
 
-      # The base branch currently has known lockfile drift. Use the same
-      # non-frozen install behavior as the existing Vercel deployment.
-      - name: Install dependencies
-        run: yarn install --non-interactive
+      - name: Install locked dependencies
+        run: yarn install --frozen-lockfile --non-interactive
 
-      - name: Dependency compatibility tests
+      - name: Unit and API regression suite
         run: yarn test
 
-      - name: Typecheck
-        run: npx tsc --noEmit
+      - name: Security and source regression contracts
+        run: yarn test:security
+
+      - name: TypeScript typecheck
+        run: yarn typecheck
 
       - name: Lint
         run: yarn lint
 
-      - name: Production build
+  redis-lua-integration:
+    name: Real Redis Lua integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Run real Redis integration tests
+        env:
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          REDIS_INTEGRATION_ALLOW_FLUSHDB: "1"
+        run: yarn test:redis
+
+  build-and-browser-smoke:
+    name: Production build, HTTP and cross-browser smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: unit-and-static
+    env:
+      # Non-production bootstrap values for `next build` and the started
+      # production server. Credential-shaped variables (secrets, tokens) are
+      # NOT committed here: the first step of this job generates fresh random
+      # values per run, so no credential material ever lives in the repository.
+      # They are job-scoped (never workflow-level) and never valid in any
+      # deployed environment.
+      UPSTASH_REDIS_REST_URL: https://example.upstash.io
+      NEXTAUTH_URL: http://localhost:3100
+      PUSHER_APP_ID: "123456"
+      NEXT_PUBLIC_PUSHER_APP_KEY: ci-only-placeholder
+      PUSHER_APP_CLUSTER: ap2
+      NEXT_PUBLIC_PUSHER_APP_CLUSTER: ap2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Generate ephemeral CI-only credentials
+        run: |
+          # Fresh random values per run: nothing credential-shaped is committed
+          # to the repository, and nothing generated here outlives the job.
+          {
+            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
+            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
+            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
+            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
+          } >> "$GITHUB_ENV"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Activate Yarn Classic
+        run: corepack prepare yarn@1.22.22 --activate
+
+      - name: Install locked dependencies
+        run: yarn install --frozen-lockfile --non-interactive
+
+      - name: Audit production and development dependencies
+        run: yarn audit:security
+
+      - name: Build production bundle
         run: yarn build
+
+      - name: Install pinned Playwright and browser engines
+        run: |
+          npm install --global playwright@1.65.1
+          playwright install --with-deps chromium firefox webkit
+
+      - name: Start production server
+        run: |
+          yarn start --port 3100 > /tmp/chatapp-next.log 2>&1 &
+          echo $! > /tmp/chatapp-next.pid
+
+      - name: Wait for production server
+        env:
+          CHATAPP_SMOKE_URL: http://127.0.0.1:3100
+        run: node scripts/wait-for-server.cjs
+
+      - name: HTTP smoke and unauthenticated API matrix
+        env:
+          CHATAPP_SMOKE_URL: http://127.0.0.1:3100
+        run: yarn test:smoke
+
+      - name: Chromium, Firefox and WebKit UI smoke
+        env:
+          CHATAPP_SMOKE_URL: http://127.0.0.1:3100
+        run: |
+          export NODE_PATH="$(npm root -g)"
+          yarn test:browser
+
+      - name: Upload production server log on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: production-smoke-server-log
+          path: /tmp/chatapp-next.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Stop production server
+        if: always()
+        run: |
+          if [ -f /tmp/chatapp-next.pid ]; then
+            kill "$(cat /tmp/chatapp-next.pid)" || true
+          fi
+
+  vapt:
+    name: OWASP ZAP passive VAPT baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: unit-and-static
+    env:
+      # Non-production bootstrap values for `next build` and the started
+      # production server. Credential-shaped variables (secrets, tokens) are
+      # NOT committed here: the first step of this job generates fresh random
+      # values per run, so no credential material ever lives in the repository.
+      # They are job-scoped (never workflow-level) and never valid in any
+      # deployed environment.
+      UPSTASH_REDIS_REST_URL: https://example.upstash.io
+      NEXTAUTH_URL: http://localhost:3100
+      PUSHER_APP_ID: "123456"
+      NEXT_PUBLIC_PUSHER_APP_KEY: ci-only-placeholder
+      PUSHER_APP_CLUSTER: ap2
+      NEXT_PUBLIC_PUSHER_APP_CLUSTER: ap2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Generate ephemeral CI-only credentials
+        run: |
+          # Fresh random values per run: nothing credential-shaped is committed
+          # to the repository, and nothing generated here outlives the job.
+          {
+            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
+            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
+            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
+            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
+          } >> "$GITHUB_ENV"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Activate Yarn Classic
+        run: corepack prepare yarn@1.22.22 --activate
+
+      - name: Install locked dependencies
+        run: yarn install --frozen-lockfile --non-interactive
+
+      - name: Build production bundle
+        run: yarn build
+
+      - name: Start production server
+        run: |
+          yarn start --port 3100 > /tmp/chatapp-vapt.log 2>&1 &
+          echo $! > /tmp/chatapp-vapt.pid
+
+      - name: Wait for production server
+        env:
+          CHATAPP_SMOKE_URL: http://127.0.0.1:3100
+        run: node scripts/wait-for-server.cjs
+
+      - name: Create the isolated scanner network
+        run: |
+          docker network create --driver bridge zap-scan-net
+          # Second isolation layer: the packaged ZAP scan scripts hard-code
+          # api.disablekey=true, so the control API cannot be protected by a
+          # key. The bridge already keeps the API off the host loopback; this
+          # rule additionally drops every host-originated packet to the
+          # scanner API port, so even a process on the runner (including the
+          # application under test) cannot reach it. The in-container scan
+          # scripts talk to the API from inside the container's own network
+          # namespace and are unaffected; container-to-host traffic to the
+          # target (port 3100 via the gateway) uses the INPUT chain, not
+          # OUTPUT, and stays open.
+          BR_IF="br-$(docker network inspect zap-scan-net -f '{{.Id}}' | cut -c1-12)"
+          echo "ZAP_BR_IF=$BR_IF" >> "$GITHUB_ENV"
+          sudo iptables -I OUTPUT -o "$BR_IF" -p tcp --dport 8080 -j DROP
+
+      - name: Run OWASP ZAP passive baseline scan
+        id: zap
+        continue-on-error: true
+        # The image is pinned by digest: mutable tags would let a republished
+        # image change what runs inside CI. The scanner runs on a dedicated
+        # bridge network (API never published to the host, plus the OUTPUT
+        # drop rule above) and reaches the target through the host gateway,
+        # so the application under test can no longer reach the scanner API
+        # to suppress its own findings.
+        run: |
+          docker run --rm --network zap-scan-net --user root \
+            --add-host=host.docker.internal:host-gateway \
+            --workdir /zap/wrk \
+            -v "${{ github.workspace }}:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af \
+            zap-baseline.py -t http://host.docker.internal:3100 -m 3 -J zap-report.json -I
+
+      - name: Validate ZAP report and block High/Critical findings
+        if: always()
+        run: node scripts/validate-zap-report.cjs zap-report.json
+
+      - name: Upload VAPT report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: zap-vapt-report
+          path: zap-report.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Fail if ZAP scanner reported an error
+        if: steps.zap.outcome == 'failure'
+        run: exit 1
+
+      - name: Stop production server and remove the scanner network
+        if: always()
+        run: |
+          if [ -f /tmp/chatapp-vapt.pid ]; then
+            kill "$(cat /tmp/chatapp-vapt.pid)" || true
+          fi
+          sudo iptables -D OUTPUT -o "$ZAP_BR_IF" -p tcp --dport 8080 -j DROP || true
+          docker network rm zap-scan-net || true
+
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/chatapp-vapt.log || true
+
+  supply-chain-security:
+    name: Dependency review and secret scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout complete Git history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks secret scan (full history, tokenless)
+        run: |
+          # Digest-pinned: a mutable :latest tag would allow silent tool changes.
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            --workdir /repo \
+            ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            detect --source . --verbose --redact
+
+      - name: Review new pull-request dependencies
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: always
+
+  codeql:
+    name: CodeQL JavaScript and TypeScript analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066
+        with:
+          languages: javascript-typescript
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066
+        with:
+          category: "/language:javascript-typescript"
+
+  vapt-active:
+    name: OWASP ZAP active scan (unauthenticated)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: unit-and-static
+    env:
+      # Non-production bootstrap values for `next build` and the started
+      # production server. Credential-shaped variables (secrets, tokens) are
+      # NOT committed here: the first step of this job generates fresh random
+      # values per run, so no credential material ever lives in the repository.
+      # They are job-scoped (never workflow-level) and never valid in any
+      # deployed environment.
+      UPSTASH_REDIS_REST_URL: https://example.upstash.io
+      NEXTAUTH_URL: http://localhost:3100
+      PUSHER_APP_ID: "123456"
+      NEXT_PUBLIC_PUSHER_APP_KEY: ci-only-placeholder
+      PUSHER_APP_CLUSTER: ap2
+      NEXT_PUBLIC_PUSHER_APP_CLUSTER: ap2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Generate ephemeral CI-only credentials
+        run: |
+          # Fresh random values per run: nothing credential-shaped is committed
+          # to the repository, and nothing generated here outlives the job.
+          {
+            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
+            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
+            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
+            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
+          } >> "$GITHUB_ENV"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Activate Yarn Classic
+        run: corepack prepare yarn@1.22.22 --activate
+
+      - name: Install locked dependencies
+        run: yarn install --frozen-lockfile --non-interactive
+
+      - name: Build production bundle
+        run: yarn build
+
+      - name: Start production server
+        run: |
+          yarn start --port 3100 > /tmp/chatapp-vapt-active.log 2>&1 &
+          echo $! > /tmp/chatapp-vapt-active.pid
+
+      - name: Wait for production server
+        env:
+          CHATAPP_SMOKE_URL: http://127.0.0.1:3100
+        run: node scripts/wait-for-server.cjs
+
+      - name: Create the isolated scanner network
+        run: |
+          docker network create --driver bridge zap-scan-net
+          # Same second isolation layer as the passive scan above.
+          BR_IF="br-$(docker network inspect zap-scan-net -f '{{.Id}}' | cut -c1-12)"
+          echo "ZAP_BR_IF=$BR_IF" >> "$GITHUB_ENV"
+          sudo iptables -I OUTPUT -o "$BR_IF" -p tcp --dport 8080 -j DROP
+
+      - name: Run OWASP ZAP active scan
+        id: zap-active
+        continue-on-error: true
+        # Digest-pinned and bridge-isolated for the same reasons as the
+        # passive scan above.
+        run: |
+          docker run --rm --network zap-scan-net --user root \
+            --add-host=host.docker.internal:host-gateway \
+            --workdir /zap/wrk \
+            -v "${{ github.workspace }}:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af \
+            zap-full-scan.py -t http://host.docker.internal:3100 -m 5 -J zap-active-report.json -I
+
+      - name: Validate active-scan report and block High/Critical findings
+        if: always()
+        run: node scripts/validate-zap-report.cjs zap-active-report.json
+
+      - name: Upload active-scan report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: zap-active-report
+          path: zap-active-report.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Fail if ZAP scanner reported an error
+        if: steps.zap-active.outcome == 'failure'
+        run: exit 1
+
+      - name: Stop production server and remove the scanner network
+        if: always()
+        run: |
+          if [ -f /tmp/chatapp-vapt-active.pid ]; then
+            kill "$(cat /tmp/chatapp-vapt-active.pid)" || true
+          fi
+          sudo iptables -D OUTPUT -o "$ZAP_BR_IF" -p tcp --dport 8080 -j DROP || true
+          docker network rm zap-scan-net || true

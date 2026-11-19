@@ -1,0 +1,46 @@
+name: Dependency and Secret Security
+
+on:
+  pull_request:
+    branches: [main, feat/complete-group-experience]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: security-supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: Block high-severity dependency additions
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: always
+
+  secret-scan:
+    name: Scan repository history for secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks (full history, tokenless)
+        run: |
+          # Digest-pinned: a mutable :latest tag would allow silent tool changes.
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            --workdir /repo \
+            ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            detect --source . --verbose --redact

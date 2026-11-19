@@ -5,16 +5,21 @@ import Messages from './Messages'
 import ChatInput from './ChatInput'
 import { pusherClient } from '@/lib/pusher'
 import { toPusherKey } from '@/lib/utils'
+import { memberInvitesAllowed, resolveAdminIds } from '@/lib/group'
 import { Search, UserPlus, X, Settings as SettingsIcon, Sparkles, Users } from 'lucide-react'
 import axios from 'axios'
 import { nanoid } from 'nanoid'
 import toast from 'react-hot-toast'
-import AddGroupMembersModal from './AddGroupMembersModal'
-import GroupSettingsModal from './GroupSettingsModal'
-import GroupFeaturesPanel from './GroupFeaturesPanel'
-import GroupMembersManager from './GroupMembersManager'
+import dynamic from 'next/dynamic'
 import PinnedMessagesBanner from './PinnedMessagesBanner'
 import { useRouter } from 'next/navigation'
+
+// The group dialogs are only ever mounted after a user action, so they load
+// lazily and keep their markup out of the first-load chat chunk.
+const AddGroupMembersModal = dynamic(() => import('./AddGroupMembersModal'), { ssr: false })
+const GroupSettingsModal = dynamic(() => import('./GroupSettingsModal'), { ssr: false })
+const GroupFeaturesPanel = dynamic(() => import('./GroupFeaturesPanel'), { ssr: false })
+const GroupMembersManager = dynamic(() => import('./GroupMembersManager'), { ssr: false })
 
 interface ChatProps {
   chatPartner: User
@@ -120,19 +125,25 @@ const Chat: FC<ChatProps> = ({
       }
     }
 
-    const groupMembersUpdatedHandler = ({
-      group: updatedGroup,
-    }: {
-      group: Group
-      addedMemberIds: string[]
-    }) => {
-      if (updatedGroup?.memberIds) {
-        setExistingMemberIds(updatedGroup.memberIds)
-        setMemberCount(updatedGroup.memberIds.length)
-      }
+    const applyGroupUpdate = (updatedGroup?: Group) => {
+      if (!updatedGroup?.memberIds) return
+      setGroup(updatedGroup)
+      setExistingMemberIds(updatedGroup.memberIds)
+      setMemberCount(updatedGroup.memberIds.length)
+    }
+
+    const groupUpdatedHandler = (updatedGroup: Group) => applyGroupUpdate(updatedGroup)
+    const groupMembersUpdatedHandler = (payload: { group?: Group; updatedGroup?: Group }) => {
+      applyGroupUpdate(payload.group || payload.updatedGroup)
+    }
+    const groupDeletedHandler = () => {
+      toast.error("This group is no longer available")
+      router.push("/dashboard/chats")
     }
 
     privateChannel.bind('user_typing', typingHandler)
+    privateChannel.bind('group_updated', groupUpdatedHandler)
+    privateChannel.bind('group_deleted', groupDeletedHandler)
     privateChannel.bind('group_members_updated', groupMembersUpdatedHandler)
     userGroupsChannel?.bind('group_removed', groupRemovedHandler)
 
@@ -140,6 +151,8 @@ const Chat: FC<ChatProps> = ({
       pusherClient.unsubscribe(presenceChannelKey)
       pusherClient.unsubscribe(privateChannelKey)
       privateChannel.unbind('user_typing', typingHandler)
+      privateChannel.unbind('group_updated', groupUpdatedHandler)
+      privateChannel.unbind('group_deleted', groupDeletedHandler)
       privateChannel.unbind('group_members_updated', groupMembersUpdatedHandler)
       userGroupsChannel?.unbind('group_removed', groupRemovedHandler)
       if (userGroupsChannelKey) pusherClient.unsubscribe(userGroupsChannelKey)
@@ -283,8 +296,9 @@ const Chat: FC<ChatProps> = ({
               <SettingsIcon size={18} />
             </button>
           )}
-          {/* Add Friends to Group Button */}
-          {isGroupChat && (
+          {/* Add Friends to Group Button - hidden when the group's policy
+              restricts invitations, so members never hit a dead-end 403 */}
+          {isGroupChat && group && memberInvitesAllowed(group, sessionId) && (
             <button
               onClick={() => setIsAddMembersModalOpen(true)}
               className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-medium text-xs border border-indigo-200 dark:border-indigo-800 transition shadow-2xs'
@@ -365,6 +379,29 @@ const Chat: FC<ChatProps> = ({
         />
       )}
 
+      {isGroupChat && group && (
+        <GroupMembersManager
+          isOpen={isMembersManagerOpen}
+          onClose={() => setIsMembersManagerOpen(false)}
+          group={group}
+          sessionId={sessionId}
+          onGroupUpdated={(updated) => {
+            setGroup(updated)
+            setExistingMemberIds(updated.memberIds)
+            setMemberCount(updated.memberIds.length)
+          }}
+        />
+      )}
+
+      {isGroupChat && group && (
+        <GroupFeaturesPanel
+          isOpen={isGroupFeaturesOpen}
+          onClose={() => setIsGroupFeaturesOpen(false)}
+          groupId={groupId}
+          isAdmin={resolveAdminIds(group).includes(sessionId)}
+        />
+      )}
+
       {/* Add Members to Group Modal */}
       {isGroupChat && (
         <AddGroupMembersModal
@@ -375,6 +412,7 @@ const Chat: FC<ChatProps> = ({
           existingMemberIds={existingMemberIds}
           onMembersAdded={(newMemberIds, updatedGroup) => {
             if (updatedGroup?.memberIds) {
+              setGroup(updatedGroup)
               setExistingMemberIds(updatedGroup.memberIds)
               setMemberCount(updatedGroup.memberIds.length)
             } else {

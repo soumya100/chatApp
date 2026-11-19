@@ -1,11 +1,14 @@
 "use client"
 
-import { FC, useEffect, useState } from "react"
+import { FC, useState } from "react"
 import axios from "axios"
 import toast from "react-hot-toast"
-import { Dialog, Transition } from "@headlessui/react"
-import { Fragment } from "react"
-import { Settings, X, Loader2, LogOut, ShieldCheck } from "lucide-react"
+import { Dialog } from "@headlessui/react"
+import Button from "@/common/Button"
+import { resolveAdminIds } from "@/lib/group"
+import {
+  Bell, Check, Clock3, Info, LogOut, Settings2, ShieldCheck, SlidersHorizontal, Users, X
+} from "lucide-react"
 import GroupPrivacySettings from "./GroupPrivacySettings"
 
 interface Props {
@@ -16,6 +19,8 @@ interface Props {
   onGroupUpdated: (group: Group) => void
   onLeave: () => void
 }
+
+type SettingsTab = "general" | "permissions" | "privacy"
 
 const defaults: GroupSettings = {
   onlyAdminsCanEditInfo: false,
@@ -31,33 +36,52 @@ const defaults: GroupSettings = {
 }
 
 const controls: { key: keyof GroupSettings; label: string; help: string }[] = [
-  { key: "onlyAdminsCanEditInfo", label: "Only admins can edit group info", help: "Restrict changes to the group name, image and description." },
-  { key: "onlyAdminsCanAddMembers", label: "Only admins can add members", help: "Members cannot add friends to this group." },
-  { key: "onlyAdminsCanSendMessages", label: "Only admins can send messages", help: "Use this group as an announcements channel." },
-  { key: "approvalRequired", label: "Approve new members", help: "Require admin approval before a member is added." },
-  { key: "onlyAdminsCanPinMessages", label: "Only admins can pin messages", help: "Restrict pinned-message management." },
-  { key: "onlyAdminsCanCreatePolls", label: "Only admins can create polls", help: "Members can still vote on available polls." },
-  { key: "onlyAdminsCanCreateEvents", label: "Only admins can create events", help: "Restrict event creation to group admins." },
-  { key: "announcementsOnly", label: "Announcements-only mode", help: "Enable admin-only posting while keeping member access." },
-  { key: "allowMemberInvites", label: "Allow member invitations", help: "Let members invite their friends when admin-only adding is disabled." },
+  { key: "onlyAdminsCanEditInfo", label: "Edit group information", help: "Limit the group name, photo and description to admins." },
+  { key: "onlyAdminsCanAddMembers", label: "Add members", help: "Only admins can invite people to this group." },
+  { key: "onlyAdminsCanSendMessages", label: "Send messages", help: "Keep conversations read-only for members." },
+  { key: "approvalRequired", label: "Approve new members", help: "Require an admin to approve new members." },
+  { key: "onlyAdminsCanPinMessages", label: "Pin messages", help: "Only admins can pin or unpin messages." },
+  { key: "onlyAdminsCanCreatePolls", label: "Create polls", help: "Members can still participate in existing polls." },
+  { key: "onlyAdminsCanCreateEvents", label: "Create events", help: "Restrict event creation to group admins." },
+  { key: "announcementsOnly", label: "Announcements-only mode", help: "Turn this group into an admin-led announcement space." },
+  { key: "allowMemberInvites", label: "Member invitations", help: "Allow members to invite friends when admin-only adding is disabled." },
+]
+
+const tabs: { id: SettingsTab; label: string; icon: typeof Info }[] = [
+  { id: "general", label: "General", icon: Info },
+  { id: "permissions", label: "Permissions", icon: ShieldCheck },
+  { id: "privacy", label: "Your privacy", icon: Bell },
 ]
 
 const GroupSettingsModal: FC<Props> = ({ isOpen, onClose, group, sessionId, onGroupUpdated, onLeave }) => {
-  const isAdmin = (group.adminIds || [group.creatorId]).includes(sessionId)
+  const isAdmin = resolveAdminIds(group).includes(sessionId)
+  const [activeTab, setActiveTab] = useState<SettingsTab>("general")
   const [name, setName] = useState(group.name)
   const [description, setDescription] = useState(group.description || "")
   const [settings, setSettings] = useState<GroupSettings>({ ...defaults, ...group.settings })
   const [isSaving, setIsSaving] = useState(false)
   const [isLeaving, setIsLeaving] = useState(false)
+  const updateSettings = (patch: Partial<GroupSettings>) => setSettings(prev => ({ ...prev, ...patch }))
+  const canSave = isAdmin && !isSaving && name.trim().length >= 2
 
-  useEffect(() => {
-    setName(group.name)
-    setDescription(group.description || "")
-    setSettings({ ...defaults, ...group.settings })
-  }, [group, isOpen])
+  // The draft resets when the dialog opens — and only then. Realtime
+  // `group_updated` events swap the group object while the dialog is open;
+  // re-deriving the draft from every incoming group object silently wiped
+  // unsaved edits and reset the active tab, so the reset instead runs on the
+  // open transition (React's adjust-state-when-a-prop-changes pattern).
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen)
+  if (prevIsOpen !== isOpen) {
+    setPrevIsOpen(isOpen)
+    if (isOpen) {
+      setActiveTab("general")
+      setName(group.name)
+      setDescription(group.description || "")
+      setSettings({ ...defaults, ...group.settings })
+    }
+  }
 
   const save = async () => {
-    if (!isAdmin || isSaving) return
+    if (!canSave) return
     setIsSaving(true)
     try {
       const response = await axios.post(`/api/group/${group.id}/manage`, {
@@ -91,53 +115,182 @@ const GroupSettingsModal: FC<Props> = ({ isOpen, onClose, group, sessionId, onGr
   }
 
   return (
-    <Transition.Root show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm" />
-        <div className="fixed inset-0 z-10 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
-            <Dialog.Panel className="w-full max-w-xl rounded-2xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 text-gray-900 dark:text-gray-100 shadow-2xl">
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-indigo-100 dark:bg-indigo-950 p-2 text-indigo-600"><Settings size={20} /></div>
-                  <div><Dialog.Title className="font-semibold">Group settings</Dialog.Title><p className="text-xs text-gray-500">{group.memberIds.length} members</p></div>
+    <Dialog open={isOpen} onClose={onClose} className="relative z-50">
+      <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-md transition-opacity" aria-hidden="true" />
+      <div className="fixed inset-0 z-10 flex items-center justify-center p-0 sm:p-5">
+        <Dialog.Panel className="flex max-h-[100dvh] w-full flex-col overflow-hidden bg-white text-slate-900 shadow-2xl dark:bg-zinc-900 dark:text-slate-100 sm:max-h-[min(88vh,820px)] sm:max-w-3xl sm:rounded-3xl sm:border sm:border-slate-200 dark:sm:border-white/10">
+          <header className="relative shrink-0 border-b border-slate-200 bg-gradient-to-br from-slate-50 via-white to-white px-5 pb-5 pt-5 dark:border-white/10 dark:from-zinc-800/40 dark:via-zinc-900 dark:to-zinc-900 sm:px-7 sm:pt-7">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3.5">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20">
+                  <Settings2 size={22} />
                 </div>
-                <button onClick={onClose} aria-label="Close settings"><X size={18} /></button>
+                <div className="min-w-0">
+                  <Dialog.Title className="truncate text-xl font-semibold tracking-tight sm:text-2xl">Group settings</Dialog.Title>
+                  <p className="mt-1 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <Users size={13} /> {group.memberIds.length} members
+                    <span className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+                    {isAdmin ? "Administrator access" : "Member access"}
+                  </p>
+                </div>
               </div>
-              {isAdmin ? (
-                <>
-                  <label className="block text-xs font-medium mb-1">Group name</label>
-                  <input value={name} onChange={e => setName(e.target.value)} maxLength={50} className="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 px-3 py-2 text-sm mb-3" />
-                  <label className="block text-xs font-medium mb-1">Description</label>
-                  <textarea value={description} onChange={e => setDescription(e.target.value)} maxLength={500} rows={2} className="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 px-3 py-2 text-sm mb-4 resize-none" />
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2"><ShieldCheck size={14} /> Permissions and safety</div>
-                  <div className="max-h-64 overflow-y-auto divide-y divide-gray-100 dark:divide-zinc-800 border-y border-gray-100 dark:border-zinc-800">
-                    {controls.map(control => (
-                      <label key={control.key} className="flex items-center justify-between gap-4 py-3 cursor-pointer">
-                        <span><span className="block text-sm font-medium">{control.label}</span><span className="block text-xs text-gray-500 mt-0.5">{control.help}</span></span>
-                        <input type="checkbox" checked={Boolean(settings[control.key])} onChange={e => setSettings(prev => ({ ...prev, [control.key]: e.target.checked }))} className="h-4 w-4 accent-indigo-600 shrink-0" />
-                      </label>
-                    ))}
-                  </div>
-                  <label className="block text-xs font-medium mt-4 mb-1">Disappearing messages</label>
-                  <select value={settings.disappearingMessagesSeconds || 0} onChange={e => setSettings(prev => ({ ...prev, disappearingMessagesSeconds: Number(e.target.value) }))} className="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 px-3 py-2 text-sm">
-                    <option value={0}>Off</option><option value={86400}>24 hours</option><option value={604800}>7 days</option><option value={7776000}>90 days</option>
-                  </select>
-                  <button onClick={save} disabled={isSaving || name.trim().length < 2} className="mt-5 w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2.5 text-sm font-semibold flex justify-center items-center gap-2">
-                    {isSaving && <Loader2 size={15} className="animate-spin" />} Save changes
-                  </button>
-                </>
-              ) : <p className="text-sm text-gray-500 py-6">Only group admins can edit group settings.</p>}
-              <GroupPrivacySettings groupId={group.id} />
-              <button onClick={leave} disabled={isLeaving} className="mt-3 w-full rounded-xl border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 py-2.5 text-sm font-semibold flex justify-center items-center gap-2">
-                {isLeaving ? <Loader2 size={15} className="animate-spin" /> : <LogOut size={15} />} Leave group
+              <button type="button" onClick={onClose} aria-label="Close settings" className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white">
+                <X size={19} />
               </button>
-            </Dialog.Panel>
+            </div>
+            <nav className="mt-6 flex gap-1 overflow-x-auto rounded-2xl bg-slate-100/80 p-1 dark:bg-white/[0.06]" aria-label="Group settings sections">
+              {tabs.map(({ id, label, icon: Icon }) => (
+                <button key={id} type="button" onClick={() => setActiveTab(id)} className={`flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold transition sm:text-sm ${activeTab === id ? "bg-white text-indigo-700 shadow-sm dark:bg-white/10 dark:text-indigo-300" : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"}`}>
+                  <Icon size={15} /> <span>{label}</span>
+                </button>
+              ))}
+            </nav>
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
+            {activeTab === "general" && (
+              <GeneralTab
+                group={group}
+                isAdmin={isAdmin}
+                name={name}
+                onNameChange={setName}
+                description={description}
+                onDescriptionChange={setDescription}
+                settings={settings}
+                onSettingsChange={updateSettings}
+              />
+            )}
+
+            {activeTab === "permissions" && (
+              <PermissionsTab isAdmin={isAdmin} settings={settings} onSettingsChange={updateSettings} />
+            )}
+
+            {activeTab === "privacy" && <PrivacyTab groupId={group.id} />}
           </div>
-        </div>
-      </Dialog>
-    </Transition.Root>
+
+          <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-slate-200 bg-white px-5 py-4 dark:border-white/10 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={leave}
+              isLoading={isLeaving}
+              disabled={isLeaving}
+              className="self-start px-3 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-400/10 sm:self-auto"
+            >
+              {!isLeaving && <LogOut size={15} />} Leave group
+            </Button>
+            <div className="flex items-center justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={onClose}>Close</Button>
+              {isAdmin && activeTab !== "privacy" && (
+                <Button type="button" onClick={save} isLoading={isSaving} disabled={!canSave}>
+                  {!isSaving && <Check size={15} />} Save changes
+                </Button>
+              )}
+            </div>
+          </footer>
+        </Dialog.Panel>
+      </div>
+    </Dialog>
   )
 }
+
+// --- Tab panels -------------------------------------------------------------
+// Each tab lives in its own component so the dialog body stays a simple tab
+// switch instead of a nested conditional tree; every new tab is additive.
+
+interface GeneralTabProps {
+  group: Group
+  isAdmin: boolean
+  name: string
+  onNameChange: (value: string) => void
+  description: string
+  onDescriptionChange: (value: string) => void
+  settings: GroupSettings
+  onSettingsChange: (patch: Partial<GroupSettings>) => void
+}
+
+const GeneralTab: FC<GeneralTabProps> = ({ group, isAdmin, name, onNameChange, description, onDescriptionChange, settings, onSettingsChange }) => (
+  <div className="mx-auto max-w-2xl space-y-5">
+    <div>
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Info size={16} className="text-indigo-500" /> Group information</div>
+      {isAdmin ? (
+        <div className="space-y-4 rounded-2xl border border-slate-200 p-4 dark:border-white/10 sm:p-5">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Group name</span>
+            <input value={name} onChange={e => onNameChange(e.target.value)} maxLength={50} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07]" placeholder="Give your group a name" />
+            <span className="mt-1 block text-right text-[11px] text-slate-400">{name.length}/50</span>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Description</span>
+            <textarea value={description} onChange={e => onDescriptionChange(e.target.value)} maxLength={500} rows={4} className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07] dark:focus:ring-indigo-500/15" placeholder="What is this group about?" />
+            <span className="mt-1 block text-right text-[11px] text-slate-400">{description.length}/500</span>
+          </label>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+          <p className="font-semibold">{group.name}</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500 dark:text-slate-400">{group.description || "No group description has been added."}</p>
+        </div>
+      )}
+    </div>
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="flex items-center gap-2 text-sm font-semibold"><Clock3 size={16} className="text-indigo-500" /> Disappearing messages</div>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Choose how long messages remain available in this group.</p>
+      <select
+        disabled={!isAdmin}
+        value={settings.disappearingMessagesSeconds || 0}
+        onChange={e => onSettingsChange({ disappearingMessagesSeconds: Number(e.target.value) })}
+        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-60 dark:border-white/10 dark:bg-zinc-900"
+      >
+        <option value={0}>Off</option><option value={86400}>24 hours</option><option value={604800}>7 days</option><option value={7776000}>90 days</option>
+      </select>
+      {!isAdmin && <p className="mt-2 text-[11px] text-slate-500">Only admins can change this setting.</p>}
+    </div>
+  </div>
+)
+
+interface PermissionsTabProps {
+  isAdmin: boolean
+  settings: GroupSettings
+  onSettingsChange: (patch: Partial<GroupSettings>) => void
+}
+
+const PermissionsTab: FC<PermissionsTabProps> = ({ isAdmin, settings, onSettingsChange }) => (
+  <div className="mx-auto max-w-2xl">
+    <div className="mb-4">
+      <div className="flex items-center gap-2 text-sm font-semibold"><SlidersHorizontal size={16} className="text-indigo-500" /> Group permissions</div>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Control what members can do in this space.</p>
+    </div>
+    {!isAdmin && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">You can view these permissions, but only group admins can change them.</div>}
+    <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 px-4 dark:divide-white/[0.06] dark:border-white/10 sm:px-5">
+      {controls.map(control => (
+        <label key={control.key} htmlFor={`group-setting-${control.key}`} className={`flex items-center justify-between gap-4 py-4 ${isAdmin ? "cursor-pointer" : "cursor-default"}`}>
+          <span className="min-w-0 pr-2">
+            <span className="block text-sm font-medium">{control.label}</span>
+            <span className="mt-1 block text-xs leading-relaxed text-slate-500 dark:text-slate-400">{control.help}</span>
+          </span>
+          <input
+            id={`group-setting-${control.key}`}
+            type="checkbox"
+            disabled={!isAdmin}
+            checked={Boolean(settings[control.key])}
+            onChange={e => onSettingsChange({ [control.key]: e.target.checked } as Partial<GroupSettings>)}
+            className="h-5 w-5 shrink-0 cursor-pointer rounded accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+          />
+        </label>
+      ))}
+    </div>
+  </div>
+)
+
+const PrivacyTab: FC<{ groupId: string }> = ({ groupId }) => (
+  <div className="mx-auto max-w-2xl">
+    <div className="mb-4">
+      <div className="flex items-center gap-2 text-sm font-semibold"><Bell size={16} className="text-indigo-500" /> Your preferences</div>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">These settings apply to your account in this group only.</p>
+    </div>
+    <GroupPrivacySettings groupId={groupId} />
+  </div>
+)
 
 export default GroupSettingsModal
