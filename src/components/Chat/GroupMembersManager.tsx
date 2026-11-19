@@ -207,7 +207,7 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
             {members.find(member => member.id === pendingRemovalId)?.name || "This person"} will lose access to future messages in this group.
           </p>
           <div className="mt-6 flex justify-center gap-3">
-            <Button type="button" variant="ghost" onClick={() => setIsRemoveDialogOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => { setIsRemoveDialogOpen(false); setPendingRemovalId(null) }}>
               Cancel
             </Button>
             <Button type="button" className="bg-rose-600 text-white hover:bg-rose-700" isLoading={busyId === pendingRemovalId} onClick={() => void confirmRemoveMember()}>
