@@ -131,7 +131,15 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
 
   return (
     <>
-    <Dialog open={isOpen} onClose={onClose} className="relative z-50">
+    <Dialog
+      open={isOpen}
+      // The confirmation is a second Headless UI dialog. Ignore close events
+      // bubbling from that topmost dialog so only its own state is dismissed.
+      onClose={() => {
+        if (!isRemoveDialogOpen) onClose()
+      }}
+      className="relative z-50"
+    >
       <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-md" aria-hidden="true" />
       <div className="fixed inset-0 z-10 flex items-center justify-center overflow-y-auto p-0 sm:p-5">
         <Dialog.Panel className="flex max-h-[100dvh] w-full flex-col overflow-hidden bg-white text-slate-900 shadow-2xl dark:bg-zinc-900 dark:text-slate-100 sm:max-h-[min(86vh,760px)] sm:max-w-xl sm:rounded-3xl sm:border sm:border-slate-200 dark:sm:border-white/10">
