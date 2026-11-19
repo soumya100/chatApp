@@ -6,6 +6,7 @@ import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
 import Avatar from "@/common/Avatar"
 import Button from "@/common/Button"
+import { DialogUI } from "@/common"
 import { resolveAdminIds } from "@/lib/group"
 import { Crown, Loader2, Search, Shield, ShieldOff, UserMinus, Users, X } from "lucide-react"
 
@@ -65,6 +66,8 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [query, setQuery] = useState("")
+  const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false)
+  const [pendingRemovalId, setPendingRemovalId] = useState<string | null>(null)
   const isCreator = group.creatorId === sessionId
   const adminIds = resolveAdminIds(group)
   const isAdmin = adminIds.includes(sessionId)
@@ -93,19 +96,29 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
     }
   }, [isOpen, loadMembers])
 
-  const act = async (action: "promote" | "demote" | "remove", memberId: string) => {
-    if (busyId) return
-    if (action === "remove" && !window.confirm("Remove this person from the group? They will lose access to future messages.")) return
+  const act = async (action: "promote" | "demote" | "remove", memberId: string): Promise<boolean> => {
+    if (busyId) return false
     setBusyId(memberId)
     try {
       const response = await axios.post(`/api/group/${group.id}/manage`, { action, memberId })
       onGroupUpdated(response.data.group)
       setMembers(prev => action === "remove" ? prev.filter(member => member.id !== memberId) : prev)
       toast.success(action === "remove" ? "Member removed" : action === "promote" ? "Member promoted to admin" : "Admin role removed")
+      return true
     } catch (error: any) {
       toast.error(error?.response?.data?.message || "Unable to update member")
+      return false
     } finally {
       setBusyId(null)
+    }
+  }
+
+  const confirmRemoveMember = async () => {
+    if (!pendingRemovalId) return
+    const removed = await act("remove", pendingRemovalId)
+    if (removed) {
+      setIsRemoveDialogOpen(false)
+      setPendingRemovalId(null)
     }
   }
 
@@ -156,7 +169,14 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
                     adminIds={adminIds}
                     canManage={isAdmin}
                     busyId={busyId}
-                    onAct={act}
+                    onAct={(action, memberId) => {
+                      if (action === "remove") {
+                        setPendingRemovalId(memberId)
+                        setIsRemoveDialogOpen(true)
+                      } else {
+                        void act(action, memberId)
+                      }
+                    }}
                   />
                 ))}
               </div>
@@ -169,6 +189,32 @@ const GroupMembersManager: FC<Props> = ({ isOpen, onClose, group, sessionId, onG
         </Dialog.Panel>
       </div>
     </Dialog>
+      <DialogUI
+        openDialog={isRemoveDialogOpen}
+        closeHandler={(open) => {
+          setIsRemoveDialogOpen(open)
+          if (!open) setPendingRemovalId(null)
+        }}
+        title="Remove group member"
+      >
+        <div className="text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400">
+            <UserMinus size={22} aria-hidden="true" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Remove this member?</h3>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+            {members.find(member => member.id === pendingRemovalId)?.name || "This person"} will lose access to future messages in this group.
+          </p>
+          <div className="mt-6 flex justify-center gap-3">
+            <Button type="button" variant="ghost" onClick={() => setIsRemoveDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" className="bg-rose-600 text-white hover:bg-rose-700" isLoading={busyId === pendingRemovalId} onClick={() => void confirmRemoveMember()}>
+              Remove member
+            </Button>
+          </div>
+        </div>
+      </DialogUI>
   )
 }
 
