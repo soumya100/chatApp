@@ -1,7 +1,9 @@
-import type { Redis } from "@upstash/redis"
-
 /** Enforce current chat access before any message read or mutation. */
-export async function hasCurrentChatAccess(db: Pick<Redis, "sismember">, chatId: string, userId: string): Promise<boolean> {
+type ChatAccessRedis = {
+    sismember(key: string, member: string): Promise<number | boolean>
+}
+
+export async function hasCurrentChatAccess(db: ChatAccessRedis, chatId: string, userId: string): Promise<boolean> {
     if (!userId || !chatId || chatId.length > 256) return false
     if (chatId.startsWith("group--")) {
         const groupId = chatId.slice("group--".length)
