@@ -9,6 +9,7 @@ interface User {
 
 interface Message {
     id: string,
+    clientRequestId?: string,
     senderId: string,
     receiverId: string,
     text: string,
