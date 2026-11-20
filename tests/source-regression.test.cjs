@@ -159,3 +159,36 @@ test("member invitations enforce explicit admin-approval and disabled-invite pol
   assert.match(source, /allowMemberInvites\s*===\s*false/);
   assert.match(source, /Promise\.allSettled/);
 });
+
+
+test("global controls use accessible premium checkbox and radio styling", () => {
+  const styles = read("src/app/globals.css");
+  assert.match(styles, /input\[type="checkbox"\][\s\S]*input\[type="radio"\]/);
+  assert.match(styles, /:checked::before/);
+  assert.match(styles, /:focus-visible/);
+  assert.match(styles, /:disabled/);
+  assert.match(styles, /html\.dark input\[type="checkbox"\]/);
+});
+
+test("dark application canvas matches the login slate background", () => {
+  const styles = read("src/app/globals.css");
+  const layout = read("src/app/layout.tsx");
+  assert.match(styles, /html\.dark body\s*\{[\s\S]*background-color:\s*#020617/);
+  assert.match(layout, /dark:bg-slate-950/);
+  assert.match(layout, /color:\s*"#020617"/);
+});
+
+test("community member actions are scoped per community and prevent duplicate submissions", () => {
+  const source = read("src/components/Chat/CommunitiesPanel.tsx");
+  assert.match(source, /memberIds\[community\.id\]/);
+  assert.match(source, /addingTo/);
+  assert.match(source, /disabled=\{addingTo===item\.id\}/);
+  assert.match(source, /finally \{ setAddingTo\(null\) \}/);
+  assert.match(source, /inviteBusyId/);
+});
+
+test("group activity refreshes without hiding the panel and disables duplicate event responses", () => {
+  const source = read("src/components/Chat/GroupFeaturesPanel.tsx");
+  assert.match(source, /await load\(false\)/);
+  assert.match(source, /disabled=\{busy\} onClick=\{\(\)=>act\(\{action:"respondEvent"/);
+});
