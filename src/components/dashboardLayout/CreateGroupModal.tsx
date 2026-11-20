@@ -95,10 +95,11 @@ const CreateGroupModal: FC<CreateGroupModalProps> = ({
                             leaveFrom="opacity-100 scale-100"
                             leaveTo="opacity-0 scale-95"
                         >
-                            <Dialog.Panel className="relative transform overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-md p-6 text-gray-900 dark:text-gray-100">
+                            <Dialog.Panel className="relative transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-md p-6 text-gray-900 dark:text-gray-100">
                                 <button
+                                    type="button"
                                     onClick={onClose}
-                                    className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
+                                    className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition"
                                 >
                                     <X className="w-5 h-5" />
                                 </button>
@@ -140,11 +141,11 @@ const CreateGroupModal: FC<CreateGroupModalProps> = ({
                                         </div>
 
                                         {friends.length === 0 ? (
-                                            <p className="text-xs text-gray-500 dark:text-gray-400 py-3 text-center border border-dashed border-gray-200 dark:border-zinc-800 rounded-xl">
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 py-3 text-center border border-dashed border-gray-200 dark:border-slate-800 rounded-xl">
                                                 You haven&apos;t added any friends yet. Add friends first to invite them to groups.
                                             </p>
                                         ) : (
-                                            <div className="max-h-52 overflow-y-auto space-y-1.5 p-1 border border-gray-100 dark:border-zinc-800 rounded-xl">
+                                            <div className="max-h-52 overflow-y-auto space-y-1.5 p-1 border border-gray-100 dark:border-slate-800 rounded-xl">
                                                 {friends.map((friend) => {
                                                     const isSelected = selectedFriendIds.includes(friend.id)
                                                     return (
@@ -154,7 +155,7 @@ const CreateGroupModal: FC<CreateGroupModalProps> = ({
                                                             className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${
                                                                 isSelected
                                                                     ? "bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800"
-                                                                    : "hover:bg-gray-50 dark:hover:bg-zinc-800/60 border border-transparent"
+                                                                    : "hover:bg-gray-50 dark:hover:bg-slate-800/60 border border-transparent"
                                                             }`}
                                                         >
                                                             <div className="flex items-center gap-3">
@@ -189,11 +190,11 @@ const CreateGroupModal: FC<CreateGroupModalProps> = ({
                                         )}
                                     </div>
 
-                                    <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-200 dark:border-zinc-800">
+                                    <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-200 dark:border-slate-800">
                                         <button
                                             type="button"
                                             onClick={onClose}
-                                            className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-lg transition"
+                                            className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition"
                                         >
                                             Cancel
                                         </button>
