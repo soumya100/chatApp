@@ -382,7 +382,8 @@ const db = {
       zadd(keys[2], { score: Number(args[0]), member: args[1] });
       if (args[2]) zadd(keys[3], { score: Number(args[3]), member: args[2] });
       zadd(keys[4], { score: Number(args[0]), member: args[6] });
-      for (let index = 5; index < keys.length; index += 1) {
+      if (args[7]) zrem(keys[5], args[7]);
+      for (let index = 6; index < keys.length; index += 1) {
         const fields = hashFields(keys[index]);
         fields[args[4]] = Number(fields[args[4]] || 0) + 1;
         hashes.set(keys[index], fields);
