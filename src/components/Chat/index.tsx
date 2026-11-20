@@ -174,6 +174,7 @@ const Chat: FC<ChatProps> = ({
     const tempId = requestId || `temp-${Date.now()}-${nanoid(6)}`
     const optimisticMessage: Message = {
       id: tempId,
+      clientRequestId: tempId,
       senderId: sessionId,
       receiverId: chatPartner.id,
       text,
