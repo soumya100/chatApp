@@ -40,6 +40,14 @@ interface PendingAttachment {
   file: File
   previewUrl: string
   fileType: 'image' | 'video' | 'audio' | 'file'
+  // Keep a completed upload URL across a failed message-send attempt so retry
+  // does not upload the same bytes again and create orphaned Blob objects.
+  uploaded?: {
+    url: string
+    mediaType: 'image' | 'video' | 'video-note' | 'audio' | 'file'
+    fileName: string
+    fileSize: number
+  }
 }
 
 const ChatInput: FC<ChatInputProps> = ({
@@ -207,7 +215,10 @@ const ChatInput: FC<ChatInputProps> = ({
 
       // Upload attachment if present via decoupled upload helper
       if (attachment) {
-        const uploadRes = await uploadMedia(attachment.file)
+        const uploadRes = attachment.uploaded || await uploadMedia(attachment.file)
+        if (!attachment.uploaded) {
+          setAttachment(previous => previous ? { ...previous, uploaded: uploadRes } : previous)
+        }
         mediaPayload = {
           mediaUrl: uploadRes.url,
           mediaType: uploadRes.mediaType,
