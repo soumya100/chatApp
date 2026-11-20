@@ -1033,7 +1033,9 @@ const Messages: FC<MessagesProps> = ({
                           {/* Optimistic Status / Checkmarks for Sent Messages */}
                           {isCurrentUser && !message.isDeleted && (
                             <span className='inline-flex items-center ml-1.5 align-middle select-none'>
-                              {message.status === 'sending' ? (
+                              {message.status === 'queued' ? (
+                                <span title='Saved on this device; waiting for a connection' className='text-[10px] opacity-80'>Queued</span>
+                              ) : message.status === 'sending' ? (
                                 <span title='Sending...'>
                                   <Loader2 className='w-3 h-3 animate-spin text-indigo-200' />
                                 </span>
@@ -1074,7 +1076,9 @@ const Messages: FC<MessagesProps> = ({
                           <span>{formatTimeStamp(message.timestamp)}</span>
                           {isCurrentUser && (
                             <span className='inline-flex items-center ml-0.5'>
-                              {message.status === 'sending' ? (
+                              {message.status === 'queued' ? (
+                                <span title='Saved on this device; waiting for a connection' className='text-[10px] opacity-80'>Queued</span>
+                              ) : message.status === 'sending' ? (
                                 <Loader2 className='w-3 h-3 animate-spin text-indigo-200' />
                               ) : message.status === 'error' ? (
                                 <button
