@@ -89,13 +89,6 @@ export async function POST(req: Request) {
         }
 
         const requestId = payload.requestId || nanoid()
-        const idempotencyKey = `message:idempotency:${session.user.id}:${chatId}:${requestId}`
-        const previouslyAccepted = await db.get(idempotencyKey)
-        if (previouslyAccepted) {
-            const existingMessage = typeof previouslyAccepted === "string" ? JSON.parse(previouslyAccepted) : previouslyAccepted
-            return Response.json(existingMessage)
-        }
-
         // Rate limit: max 15 new messages per 10 seconds
         operation = 'rate limit'
         const { success: isAllowed } = await rateLimit(session.user.id, 'send_message', {
@@ -134,6 +127,8 @@ export async function POST(req: Request) {
             if (!(await isValidReplyTarget(chatId, payload.replyTo))) {
                 return new Response('Cannot reply to a deleted or system-generated message', { status: 400 })
             }
+            const existingGroupSend = await db.get(`message:idempotency:${session.user.id}:${chatId}:${requestId}`)
+            if (existingGroupSend) return Response.json(typeof existingGroupSend === "string" ? JSON.parse(existingGroupSend) : existingGroupSend)
 
             const messageData = {
                 id: nanoid(),
@@ -210,6 +205,8 @@ export async function POST(req: Request) {
         if (!(await isValidReplyTarget(chatId, payload.replyTo))) {
             return new Response('Cannot reply to a deleted or system-generated message', { status: 400 })
         }
+        const existingDirectSend = await db.get(`message:idempotency:${session.user.id}:${chatId}:${requestId}`)
+        if (existingDirectSend) return Response.json(typeof existingDirectSend === "string" ? JSON.parse(existingDirectSend) : existingDirectSend)
 
         const messageData = {
             id: nanoid(),
