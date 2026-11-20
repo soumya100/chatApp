@@ -43,6 +43,17 @@ function decode<T>(raw: unknown): T {
   return (typeof raw === "string" ? JSON.parse(raw) : raw) as T
 }
 
+async function resolveCommunityMemberId(input: string): Promise<string | null> {
+  const value = input.trim()
+  if (!value) return null
+  // Accept either the internal ID or the account email shown in the UI.
+  const normalizedEmail = value.toLowerCase()
+  const indexedId = await db.get(`user:email:${normalizedEmail}`) as string | null
+  const candidateId = indexedId || value
+  const user = await db.get(`user:${candidateId}`)
+  return user ? candidateId : null
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ communityId: string }> }) {
   const { communityId } = await params
   try {
@@ -122,16 +133,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ communi
           }
         }
       } else if (parsed.data.action === "inviteMember") {
-        const targetId = parsed.data.memberId
-        const target = await db.get(`user:${targetId}`)
-        if (!target) return Response.json({ message: "User not found" }, { status: 404 })
+        const targetId = await resolveCommunityMemberId(parsed.data.memberId)
+        if (!targetId) return Response.json({ message: "No account matches that email address or user ID" }, { status: 404 })
         if (next.memberIds.includes(targetId)) return Response.json({ message: "User is already a member" }, { status: 409 })
         ops.push({ type: "sadd", key: `community:${communityId}:invites`, value: targetId })
         ops.push({ type: "sadd", key: `user:${targetId}:community-invites`, value: communityId })
       } else if (parsed.data.action === "addMember") {
-        const targetId = parsed.data.memberId
-        const target = await db.get(`user:${targetId}`)
-        if (!target) return Response.json({ message: "User not found" }, { status: 404 })
+        const targetId = await resolveCommunityMemberId(parsed.data.memberId)
+        if (!targetId) return Response.json({ message: "No account matches that email address or user ID" }, { status: 404 })
         if (next.memberIds.includes(targetId)) return Response.json({ message: "User is already a community member" }, { status: 409 })
         next.memberIds.push(targetId)
         ops.push({ type: "sadd", key: `user:${targetId}:communities`, value: communityId })
