@@ -54,17 +54,18 @@ const CommunitiesPanel: FC<Props> = ({ groups }) => {
     e.preventDefault()
     if (!memberId.trim()) return
     try {
-      await axios.post(`/api/community/${community.id}`,{action:"inviteMember",memberId:memberId.trim()})
+      await axios.post(`/api/community/${community.id}`,{action:"addMember",memberId:memberId.trim()})
       setMemberId("")
-      toast.success("Invitation sent")
-    } catch (error:any) { toast.error(error?.response?.data?.message || "Unable to invite member") }
+      await load()
+      toast.success("Member added to community")
+    } catch (error:any) { toast.error(error?.response?.data?.message || "Unable to add member") }
   }
 
   return <section className="rounded-2xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-4">
     <div className="flex items-center gap-2"><Users size={18}/><h2 className="font-semibold">Communities</h2></div>
     {loading ? <Loader2 className="animate-spin"/> : <>
       {invites.length > 0 && <div className="space-y-2"><p className="text-xs font-semibold text-gray-500">Invitations</p>{invites.map(item=><article key={item.id} className="rounded-xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/20 p-3 flex items-center gap-3"><div className="min-w-0 flex-1"><p className="font-medium text-sm">{item.name}</p><p className="text-xs text-gray-500">{item.description}</p></div><button onClick={()=>acceptInvite(item)} className="rounded-lg bg-indigo-600 text-white px-2.5 py-1.5 text-xs flex items-center gap-1"><Check size={13}/> Accept</button><button onClick={()=>declineInvite(item)} className="rounded-lg border border-gray-300 dark:border-zinc-700 px-2.5 py-1.5 text-xs flex items-center gap-1"><X size={13}/> Decline</button></article>)}</div>}
-      {items.map(item => <article key={item.id} className="rounded-xl bg-gray-50 dark:bg-zinc-800 p-3"><p className="font-medium text-sm">{item.name}</p><p className="text-xs text-gray-500 mt-1">{item.description}</p><p className="text-xs text-gray-500 mt-2">{item.groupIds?.length || 0} linked groups · {item.memberIds?.length || 1} members</p><form onSubmit={e=>inviteMember(item,e)} className="mt-3 flex gap-2"><input value={memberId} onChange={e=>setMemberId(e.target.value)} placeholder="User ID to invite" className="min-w-0 flex-1 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-xs"/><button className="rounded-lg bg-indigo-600 text-white px-2 py-1.5 text-xs">Invite</button></form></article>)}
+      {items.map(item => <article key={item.id} className="rounded-xl bg-gray-50 dark:bg-zinc-800 p-3"><p className="font-medium text-sm">{item.name}</p><p className="text-xs text-gray-500 mt-1">{item.description}</p><p className="text-xs text-gray-500 mt-2">{item.groupIds?.length || 0} linked groups · {item.memberIds?.length || 1} members</p><form onSubmit={e=>inviteMember(item,e)} className="mt-3 flex gap-2"><input value={memberId} onChange={e=>setMemberId(e.target.value)} placeholder="User ID to add" className="min-w-0 flex-1 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-xs"/><button className="rounded-lg bg-indigo-600 text-white px-2 py-1.5 text-xs">Add member</button></form></article>)}
       {items.length===0 && invites.length===0 && <p className="text-xs text-gray-500">No communities yet.</p>}
     </>}
     <form onSubmit={create} className="border-t border-gray-200 dark:border-zinc-800 pt-4 space-y-2">
