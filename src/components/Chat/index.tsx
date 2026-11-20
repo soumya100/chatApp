@@ -192,11 +192,13 @@ const Chat: FC<ChatProps> = ({
         )
       )
     } catch (error: any) {
-      // 4. Mark as error with retry capability
+      // Keep the failed optimistic row visible, but reject the promise so the
+      // composer does not clear its draft. The user can retry from either
+      // surface without silently losing the original text/attachment.
       setMessages((prev) =>
         prev.map((msg) => (msg.id === tempId ? { ...msg, status: 'error' } : msg))
       )
-      toast.error(error?.response?.data || 'Failed to send message. Click retry.')
+      throw error
     }
   }
 
