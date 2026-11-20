@@ -1,6 +1,6 @@
 "use client"
 
-import { FC, useEffect, useState } from "react"
+import { FC, useCallback, useEffect, useState } from "react"
 import axios from "axios"
 import { CalendarDays, Check, Clock3, Loader2, Megaphone, Vote } from "lucide-react"
 
@@ -13,7 +13,7 @@ const FeatureMessageCard: FC<Props> = ({ groupId, featureType, featureId }) => {
   const [selected, setSelected] = useState<string[]>([])
   const [error, setError] = useState("")
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const response = await axios.get(`/api/group/${groupId}/features`)
       setFeatures(response.data.features)
@@ -21,8 +21,8 @@ const FeatureMessageCard: FC<Props> = ({ groupId, featureType, featureId }) => {
     } catch {
       setError("Activity details are temporarily unavailable.")
     }
-  }
-  useEffect(() => { void load() }, [groupId, featureId])
+  }, [groupId])
+  useEffect(() => { void load() }, [load, featureId])
 
   const item = featureType === "poll"
     ? features?.polls.find(value => value.id === featureId)
