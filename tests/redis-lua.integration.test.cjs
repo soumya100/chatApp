@@ -117,6 +117,41 @@ test("Redis Lua integration: poll voting atomically replaces a prior choice and 
   assert.equal(await redis(["GET", key]), unchanged, "invalid vote must not mutate stored feature data");
 });
 
+test("Redis Lua integration: creating a group feature atomically writes its inbox message and expiry index", { skip: !enabled }, async () => {
+  const script = lua("src/app/api/group/[groupId]/features/route.ts", "atomicFeatureUpdate");
+  await redis(["FLUSHDB"]);
+  const featureKey = "group:g1:features";
+  const messageKey = "chat:group--g1:messages";
+  const expiryKey = "chat:expiring";
+  const payload = JSON.stringify({
+    id: "poll-1",
+    question: "Which roadmap?",
+    options: [{ id: "a", label: "A", votes: [] }, { id: "b", label: "B", votes: [] }],
+    multiple: false,
+    createdBy: "owner",
+    createdAt: 100,
+    closed: false
+  });
+  const message = JSON.stringify({
+    id: "message-1",
+    receiverId: "group--g1",
+    senderId: "owner",
+    text: "Poll: Which roadmap?",
+    timestamp: 100,
+    expiresAt: 500,
+    featureType: "poll",
+    featureId: "poll-1"
+  });
+
+  const result = JSON.parse(await evalLua(script, [featureKey, messageKey, expiryKey], ["owner", "createPoll", payload, message]));
+  assert.equal(result.result.id, "poll-1");
+  assert.equal(await redis(["ZRANGE", messageKey, "0", "-1"]), message, "inbox message is committed with the feature");
+  const expiryRows = JSON.parse(await redis(["ZRANGE", expiryKey, "0", "-1"]));
+  assert.equal(expiryRows.chatKey, messageKey);
+  assert.equal(expiryRows.messageId, "message-1");
+  assert.equal(expiryRows.raw, message);
+});
+
 test("Redis Lua integration: pinning rejects system/deleted messages and updates valid sorted-set entries", { skip: !enabled }, async () => {
   const script = lua("src/app/api/group/[groupId]/pin/route.ts", "atomicPinUpdate");
   await redis(["FLUSHDB"]);
