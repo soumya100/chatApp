@@ -22,18 +22,18 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   const [busy, setBusy] = useState(false)
   const [pollSelections, setPollSelections] = useState<Record<string, string[]>>({})
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true)
     try { const res = await axios.get(`/api/group/${groupId}/features`); setFeatures(res.data.features) }
     catch { toast.error("Unable to load group features") }
-    finally { setLoading(false) }
+    finally { if (showLoading) setLoading(false) }
   }, [groupId])
   useEffect(() => { if (isOpen) void load() }, [isOpen, load])
 
   const act = async (payload: any): Promise<boolean> => {
     if (busy) return false
     setBusy(true)
-    try { await axios.post(`/api/group/${groupId}/features`, payload); await load(); toast.success("Group updated"); return true }
+    try { await axios.post(`/api/group/${groupId}/features`, payload); await load(false); toast.success("Group updated"); return true }
     catch (error: any) { toast.error(error?.response?.data?.message || "Action failed"); return false }
     finally { setBusy(false) }
   }
@@ -93,7 +93,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
             </section>
             {isAdmin && <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]"><h3 className="font-semibold text-sm mb-2 flex gap-2 items-center"><Megaphone size={16}/> Post announcement</h3><textarea value={announcement} onChange={e=>setAnnouncement(e.target.value)} rows={2} maxLength={2000} placeholder="Write an announcement..." className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07]"/><button disabled={busy || !announcement.trim()} onClick={async()=>{const saved=await act({action:"announce",text:announcement});if(saved)setAnnouncement("")}} className="mt-2 rounded-xl bg-indigo-600 text-white px-3 py-2 text-xs font-semibold disabled:opacity-50">Publish</button></section>}
             <section><h3 className="font-semibold text-sm mb-2">Polls</h3>{features.polls.length===0?<p className="text-xs text-slate-500 dark:text-slate-400">No polls yet.</p>:features.polls.map(poll=>{const selected=pollSelections[poll.id]??poll.myOptionIds??[];return <div key={poll.id} className="rounded-xl border border-slate-200 bg-white p-3 mb-2 dark:border-white/10 dark:bg-white/[0.03]"><p className="text-sm font-medium mb-2">{poll.question}</p><div className="space-y-1">{poll.options.map((option:any)=><button type="button" key={option.id} disabled={busy || poll.closed} onClick={()=>togglePollOption(poll,option.id)} className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs text-left border ${selected.includes(option.id)?"bg-indigo-50 border-indigo-300 dark:bg-indigo-400/10 dark:border-indigo-400/40":"bg-white dark:bg-white/[0.04] border-transparent"}`}><span>{option.label}</span><span className="text-slate-500 dark:text-slate-400">{option.votes?.length||0} <Check size={12} className="inline"/></span></button>)}</div>{poll.multiple&&<button type="button" disabled={busy||selected.length===0||poll.closed} onClick={()=>submitPollVote(poll)} className="mt-2 rounded-xl bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold disabled:opacity-50">Submit selections</button>}</div>})}</section>
-            <section><h3 className="font-semibold text-sm mb-2">Events</h3>{features.events.length===0?<p className="text-xs text-slate-500 dark:text-slate-400">No upcoming events.</p>:features.events.map(event=><div key={event.id} className="rounded-xl border border-slate-200 bg-white p-3 mb-2 dark:border-white/10 dark:bg-white/[0.03]"><p className="text-sm font-medium">{event.title}</p><p className="text-xs text-slate-500 dark:text-slate-400">{new Date(event.startsAt).toLocaleString()}</p>{event.description&&<p className="text-xs mt-1">{event.description}</p>}<div className="flex gap-2 mt-2">{(["going","maybe","not-going"] as const).map(response=><button key={response} onClick={()=>act({action:"respondEvent",eventId:event.id,response})} className="rounded-lg border border-slate-200 dark:border-white/10 px-2 py-1 text-[11px] capitalize transition hover:bg-slate-100 dark:hover:bg-white/10">{response.replace("-"," ")}</button>)}</div></div>)}</section>
+            <section><h3 className="font-semibold text-sm mb-2">Events</h3>{features.events.length===0?<p className="text-xs text-slate-500 dark:text-slate-400">No upcoming events.</p>:features.events.map(event=><div key={event.id} className="rounded-xl border border-slate-200 bg-white p-3 mb-2 dark:border-white/10 dark:bg-white/[0.03]"><p className="text-sm font-medium">{event.title}</p><p className="text-xs text-slate-500 dark:text-slate-400">{new Date(event.startsAt).toLocaleString()}</p>{event.description&&<p className="text-xs mt-1">{event.description}</p>}<div className="flex gap-2 mt-2">{(["going","maybe","not-going"] as const).map(response=><button type="button" key={response} disabled={busy} onClick={()=>act({action:"respondEvent",eventId:event.id,response})} className="rounded-lg border border-slate-200 dark:border-white/10 px-2 py-1 text-[11px] capitalize transition hover:bg-slate-100 dark:hover:bg-white/10">{response.replace("-"," ")}</button>)}</div></div>)}</section>
             <section><h3 className="font-semibold text-sm mb-2">Announcements</h3>{features.announcements.length===0?<p className="text-xs text-slate-500 dark:text-slate-400">No announcements yet.</p>:features.announcements.map(item=><div key={item.id} className="rounded-xl bg-amber-50 dark:bg-amber-950/20 p-3 mb-2"><p className="text-sm">{item.text}</p><p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">{new Date(item.createdAt).toLocaleString()}</p></div>)}</section>
           </div>}
         </Dialog.Panel>
