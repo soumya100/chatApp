@@ -68,6 +68,7 @@ const ChatInput: FC<ChatInputProps> = ({
 
   // Focus textarea when replyingTo changes
   useEffect(() => {
+    setPendingRequestId(null)
     if (replyingTo) {
       textAreaRef.current?.focus()
     }
