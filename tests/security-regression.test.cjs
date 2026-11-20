@@ -210,9 +210,9 @@ test("dangerous raw HTML injection is not introduced in app components", () => {
 
 test("deleted or mismatched user records invalidate stale NextAuth JWT sessions", () => {
   const auth = read("src/lib/auth.ts");
-  assert.match(auth, /if \(!token\?\.id \|\| typeof token\.id !== "string"\)\s*\{\s*return null/s);
-  assert.match(auth, /if \(!dbUserResult\)\s*\{\s*return null/s);
-  assert.match(auth, /if \(!dbUser\?\.id \|\| dbUser\.id !== token\.id\)\s*\{\s*return null/s);
+  assert.match(auth, /if \(!token\?\.id \|\| typeof token\.id !== "string"\)\s*\{\s*return \{ \.\.\.token, id: "", exp: 0 \}/s);
+  assert.match(auth, /if \(!dbUserResult\)\s*\{\s*return \{ \.\.\.token, id: "", exp: 0 \}/s);
+  assert.match(auth, /if \(!dbUser\?\.id \|\| dbUser\.id !== token\.id\)\s*\{\s*return \{ \.\.\.token, id: "", exp: 0 \}/s);
   assert.match(auth, /return \{\s*\.\.\.token,\s*id: dbUser\.id/s);
   assert.doesNotMatch(auth, /if \(!dbUserResult\)\s*\{\s*return token/s);
 });
