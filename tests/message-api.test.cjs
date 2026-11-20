@@ -90,6 +90,39 @@ test("message send: retries with the same requestId do not duplicate group unrea
   assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 1);
 });
 
+test("message send: idempotent retries still require current chat authorization", async () => {
+  h.reset();
+  seedDirectFriendship();
+  const directPayload = { chatId: DIRECT, text: "authorized once", requestId: "request-auth-direct-01" };
+  assert.equal((await status(await send.POST(h.request(directPayload)))).status, 200);
+  h.seedSet("user:owner:friends", []);
+  assert.equal((await status(await send.POST(h.request(directPayload)))).status, 401);
+
+  h.reset();
+  seedGroupChat();
+  h.setSession("member");
+  const groupPayload = { chatId: GROUP_CHAT, text: "member once", requestId: "request-auth-group-01" };
+  assert.equal((await status(await send.POST(h.request(groupPayload)))).status, 200);
+  h.seedSet("group:g1:members", ["owner", "admin"]);
+  assert.equal((await status(await send.POST(h.request(groupPayload)))).status, 403);
+});
+
+test("message send: a completed retry does not consume the new-message rate limit", async () => {
+  h.reset();
+  seedDirectFriendship();
+  const original = { chatId: DIRECT, text: "original", requestId: "request-rate-limit-01" };
+  const first = await status(await send.POST(h.request(original)));
+  assert.equal(first.status, 200);
+  for (let index = 0; index < 14; index += 1) {
+    const sent = await status(await send.POST(h.request({ chatId: DIRECT, text: `new ${index}`, requestId: `request-rate-${index}-0001` })));
+    assert.equal(sent.status, 200);
+  }
+  const retry = await status(await send.POST(h.request(original)));
+  assert.equal(retry.status, 200);
+  assert.equal(retry.data.id, first.data.id);
+  assert.equal(h.getDirectMessages().length, 15);
+});
+
 test("message send: media-only messages are accepted and broadcast to the friend", async () => {
   h.reset();
   seedDirectFriendship();
