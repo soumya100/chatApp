@@ -421,6 +421,10 @@ const db = {
       }
 
       features.set(groupId, JSON.stringify(state));
+      if (args[3]) {
+        const message = JSON.parse(args[3]);
+        zadd(keys[1], { score: message.timestamp, member: args[3] });
+      }
       return JSON.stringify({ features: state, result });
     }
 
