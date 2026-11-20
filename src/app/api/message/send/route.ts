@@ -13,7 +13,8 @@ import { z } from "zod"
 
 const sendMessagePayloadValidator = z.object({
     text: z.string().max(2000).default(''),
-    chatId: z.string(),
+    chatId: z.string().min(1).max(256),
+    requestId: z.string().min(8).max(128).optional(),
     mediaUrl: z.string().optional(),
     mediaType: z.enum(['image', 'file', 'video', 'audio', 'video-note']).optional(),
     fileName: z.string().optional(),
@@ -30,6 +31,28 @@ const sendMessagePayloadValidator = z.object({
 })
 
  
+const atomicPersistMessage = `
+-- chat-message-idempotency-v1
+local existing = redis.call("GET", KEYS[1])
+if existing then return { 0, existing } end
+redis.call("ZADD", KEYS[2], ARGV[1], ARGV[2])
+if ARGV[3] ~= "" then redis.call("ZADD", KEYS[3], ARGV[4], ARGV[3]) end
+for index = 4, #KEYS do redis.call("HINCRBY", KEYS[index], ARGV[5], 1) end
+redis.call("SET", KEYS[1], ARGV[2], "EX", 86400)
+return { 1, ARGV[2] }
+`
+
+async function persistMessageOnce(options: { senderId: string; chatId: string; requestId: string; message: Message; recipientIds: string[] }) {
+    const { senderId, chatId, requestId, message, recipientIds } = options
+    const messageKey = `chat:${chatId}:messages`
+    const idempotencyKey = `message:idempotency:${senderId}:${chatId}:${requestId}`
+    const serializedMessage = JSON.stringify(message)
+    const expiryRaw = message.expiresAt ? JSON.stringify({ chatKey: messageKey, messageId: message.id, raw: serializedMessage }) : ""
+    const keys = [idempotencyKey, messageKey, "chat:expiring", ...recipientIds.map(memberId => `user:${memberId}:unread`)]
+    const result = await db.eval(atomicPersistMessage, keys, [String(message.timestamp), serializedMessage, expiryRaw, String(message.expiresAt || ""), chatId]) as [number | string, string]
+    return { created: Number(result[0]) === 1, message: JSON.parse(result[1]) as Message }
+}
+
 async function isValidReplyTarget(chatId: string, replyTo?: { id: string }) {
     if (!replyTo) return true
 
@@ -65,7 +88,15 @@ export async function POST(req: Request) {
             return new Response('Unauthorized', { status: 401 })
         }
 
-        // Rate limit: max 15 messages per 10 seconds
+        const requestId = payload.requestId || nanoid()
+        const idempotencyKey = `message:idempotency:${session.user.id}:${chatId}:${requestId}`
+        const previouslyAccepted = await db.get(idempotencyKey)
+        if (previouslyAccepted) {
+            const existingMessage = typeof previouslyAccepted === "string" ? JSON.parse(previouslyAccepted) : previouslyAccepted
+            return Response.json(existingMessage)
+        }
+
+        // Rate limit: max 15 new messages per 10 seconds
         operation = 'rate limit'
         const { success: isAllowed } = await rateLimit(session.user.id, 'send_message', {
             limit: 15,
@@ -123,19 +154,11 @@ export async function POST(req: Request) {
 
             const message = messageValidator.parse(messageData)
 
-            // Persist message to group chat history
-            operation = 'persist group message'
-            const serializedMessage = JSON.stringify(message)
-            const messageKey = `chat:${chatId}:messages`
-            const persistence = db.pipeline()
-            persistence.zadd(messageKey, { score: timeStamp, member: serializedMessage })
-            if (message.expiresAt) {
-                persistence.zadd("chat:expiring", {
-                    score: message.expiresAt,
-                    member: JSON.stringify({ chatKey: messageKey, messageId: message.id, raw: serializedMessage })
-                })
-            }
-            await persistence.exec()
+            const allMembers = (await db.smembers(`group:${groupId}:members`)) as string[]
+            const recipientMembers = allMembers.filter((memberId) => memberId !== session.user.id)
+            operation = 'persist group message atomically'
+            const persisted = await persistMessageOnce({ senderId: session.user.id, chatId, requestId, message, recipientIds: recipientMembers })
+            if (!persisted.created) return Response.json(persisted.message)
 
             // Broadcast after persistence. Pusher payloads must stay small: profile images
             // may be stored as data URLs and exceed Pusher's event-size limit.
@@ -146,13 +169,9 @@ export async function POST(req: Request) {
             ])
             broadcastResults.forEach(result => { if (result.status === 'rejected') console.error('Pusher group message broadcast failed:', result.reason) })
 
-            // Increment unread and notify each group member (except sender)
-            const allMembers = (await db.smembers(`group:${groupId}:members`)) as string[]
-            const recipientMembers = allMembers.filter((m) => m !== session.user.id)
-
-            operation = 'update group unread counts and notifications'
+            // Notify members; unread counters were committed atomically above.
+            operation = 'notify group members'
             await Promise.all(recipientMembers.map(async (memberId) => {
-                await db.hincrby(`user:${memberId}:unread`, chatId, 1)
                 const rawPreferences = await db.get(groupPreferencesKey(memberId, groupId))
                 const preferences = groupPreferencesOrDefault(rawPreferences)
                 if (preferences.notifications === 'muted') return
@@ -210,15 +229,9 @@ export async function POST(req: Request) {
 
         const message = messageValidator.parse(messageData)
 
-        // Persist message to Redis before attempting realtime delivery.
-        operation = 'persist direct message and unread count'
-        await Promise.all([
-            db.zadd(`chat:${chatId}:messages`, {
-                score: timeStamp,
-                member: JSON.stringify(message)
-            }),
-            db.hincrby(`user:${friendId}:unread`, chatId, 1)
-        ])
+        operation = 'persist direct message atomically'
+        const persisted = await persistMessageOnce({ senderId: session.user.id, chatId, requestId, message, recipientIds: [friendId] })
+        if (!persisted.created) return Response.json(persisted.message)
 
         // Realtime delivery is best-effort: Pusher can reject oversized events (413).
         // A Pusher failure must not make an already-persisted message look unsent.
