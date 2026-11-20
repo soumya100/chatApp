@@ -59,8 +59,8 @@ test("Redis Lua integration: message send is idempotent and increments unread on
   const args = ["1000", message, "", "", "owner--member"];
   const keys = [idempotencyKey, CHAT, "chat:expiring", unreadKey];
 
-  const first = await evalLua(script, keys, args);
-  const retry = await evalLua(script, keys, args);
+  const first = (await evalLua(script, keys, args)).split("\n");
+  const retry = (await evalLua(script, keys, args)).split("\n");
   assert.equal(Number(first[0]), 1, "first send creates the message");
   assert.equal(Number(retry[0]), 0, "retry returns the previously stored message");
   assert.equal(JSON.parse(first[1]).id, "server-message-1");
