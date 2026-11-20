@@ -184,7 +184,22 @@ test("event poll privacy: GET exposes the requesting member's choices, not anoth
   assert.deepEqual(event.timeOptions.map(option => option.votes.length), [1, 1]);
 });
 
-test("event poll privacy: missing groups and malformed stored JSON fail safely", async () => {
+test("event poll privacy: missing groups return 404 without exposing stored data", async () => {
   h.reset({ group: null });
   assert.equal((await read(await get())).status, 404);
+});
+
+test("event poll input: HTML-like titles and descriptions remain inert text data", async () => {
+  h.reset();
+  const title = "<script>alert(1)</script>";
+  const description = "<img src=x onerror=alert(1)>";
+  const result = await read(await post({
+    action: "createEvent",
+    title,
+    description,
+    startsAt: future(),
+  }));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.result.title, title);
+  assert.equal(result.data.result.description, description);
 });
