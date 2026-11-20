@@ -49,3 +49,9 @@ test("event poll UI: controls disable during requests and successful actions ref
   assert.match(source, /await load\(false\)/);
   assert.match(source, /disabled=\{busy\|\|!\(/);
 });
+
+test("event poll UI: user-provided event content is rendered as React text, never raw HTML", () => {
+  assert.match(source, /\{event\.title\}/);
+  assert.match(source, /\{event\.description\}/);
+  assert.doesNotMatch(source, /dangerouslySetInnerHTML/);
+});
