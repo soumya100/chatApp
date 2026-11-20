@@ -1,4 +1,5 @@
 import { authOptions } from "@/lib/auth"
+import { hasCurrentChatAccess } from "@/lib/chat-access"
 import { db } from "@/lib/db"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
@@ -50,14 +51,7 @@ export async function POST(req: Request) {
         if (!parsed.success) return new Response("Invalid request payload", { status: 422 })
         const { messageId, chatId, newText } = parsed.data
 
-        if (chatId.startsWith("group--")) {
-            const groupId = chatId.slice("group--".length)
-            const isMember = await db.sismember(`group:${groupId}:members`, userId)
-            if (!isMember) return new Response("Forbidden: You are not a member of this group", { status: 403 })
-        } else {
-            const ids = chatId.split("--")
-            if (ids.length !== 2 || !ids.includes(userId)) return new Response("Forbidden", { status: 403 })
-        }
+        if (!(await hasCurrentChatAccess(db, chatId, userId))) return new Response("Forbidden", { status: 403 })
 
         const rawResult = await db.eval(atomicEdit, [`chat:${chatId}:messages`], [messageId, userId, newText])
         const result = decodeResult(rawResult)
