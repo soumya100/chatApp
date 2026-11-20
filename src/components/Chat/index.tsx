@@ -458,6 +458,7 @@ const Chat: FC<ChatProps> = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder='Search in chat...'
+                aria-label='Search messages in this conversation'
                 className='bg-transparent border-0 focus:ring-0 text-xs text-gray-800 dark:text-gray-100 placeholder:text-gray-400 p-0 w-32 sm:w-48'
                 autoFocus
               />
@@ -467,8 +468,9 @@ const Chat: FC<ChatProps> = ({
                   setSearchQuery('')
                 }}
                 className='text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+                aria-label='Close chat search'
               >
-                <X size={15} />
+                <X size={15} aria-hidden='true' />
               </button>
             </div>
           ) : (
@@ -476,8 +478,9 @@ const Chat: FC<ChatProps> = ({
               onClick={() => setIsSearchOpen(true)}
               className='p-2 rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 transition-colors'
               title='Search in conversation'
+              aria-label='Search in conversation'
             >
-              <Search size={18} />
+              <Search size={18} aria-hidden='true' />
             </button>
           )}
         </div>
