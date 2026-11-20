@@ -7,7 +7,6 @@ import axios from 'axios'
 import { format } from 'date-fns'
 import {
   AlertCircle,
-  Megaphone,
   Check,
   CheckCheck,
   Download,
@@ -1020,7 +1019,6 @@ const Messages: FC<MessagesProps> = ({
                     <>
                       {message.text && message.featureType !== 'announcement' && (
                         <p className='break-words text-sm'>
-                          {message.featureType === 'announcement' && !message.isDeleted && <Megaphone size={14} className='mr-1.5 inline-block align-[-2px] text-amber-200' aria-label='Announcement' />}
                           {message.text}
                           {message.isEdited && !message.isDeleted && (
                             <span className='ml-1.5 text-[0.65rem] opacity-75'>(edited)</span>
