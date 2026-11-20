@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { fetchRedis } from "@/helpers/redis"
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
@@ -34,23 +35,29 @@ const sendMessagePayloadValidator = z.object({
 const atomicPersistMessage = `
 -- chat-message-idempotency-v1
 local existing = redis.call("GET", KEYS[1])
-if existing then return { 0, existing } end
-redis.call("ZADD", KEYS[2], ARGV[1], ARGV[2])
-if ARGV[3] ~= "" then redis.call("ZADD", KEYS[3], ARGV[4], ARGV[3]) end
-for index = 4, #KEYS do redis.call("HINCRBY", KEYS[index], ARGV[5], 1) end
+if existing then
+  local previousFingerprint = redis.call("GET", KEYS[2])
+  if previousFingerprint and previousFingerprint ~= ARGV[6] then return { -1, existing } end
+  return { 0, existing }
+end
+redis.call("ZADD", KEYS[3], ARGV[1], ARGV[2])
+if ARGV[3] ~= "" then redis.call("ZADD", KEYS[4], ARGV[4], ARGV[3]) end
+for index = 5, #KEYS do redis.call("HINCRBY", KEYS[index], ARGV[5], 1) end
 redis.call("SET", KEYS[1], ARGV[2], "EX", 86400)
+redis.call("SET", KEYS[2], ARGV[6], "EX", 86400)
 return { 1, ARGV[2] }
 `
 
-async function persistMessageOnce(options: { senderId: string; chatId: string; requestId: string; message: Message; recipientIds: string[] }) {
-    const { senderId, chatId, requestId, message, recipientIds } = options
+async function persistMessageOnce(options: { senderId: string; chatId: string; requestId: string; fingerprint: string; message: Message; recipientIds: string[] }) {
+    const { senderId, chatId, requestId, fingerprint, message, recipientIds } = options
     const messageKey = `chat:${chatId}:messages`
     const idempotencyKey = `message:idempotency:${senderId}:${chatId}:${requestId}`
+    const fingerprintKey = `${idempotencyKey}:fingerprint`
     const serializedMessage = JSON.stringify(message)
     const expiryRaw = message.expiresAt ? JSON.stringify({ chatKey: messageKey, messageId: message.id, raw: serializedMessage }) : ""
-    const keys = [idempotencyKey, messageKey, "chat:expiring", ...recipientIds.map(memberId => `user:${memberId}:unread`)]
-    const result = await db.eval(atomicPersistMessage, keys, [String(message.timestamp), serializedMessage, expiryRaw, String(message.expiresAt || ""), chatId]) as [number | string, string]
-    return { created: Number(result[0]) === 1, message: JSON.parse(result[1]) as Message }
+    const keys = [idempotencyKey, fingerprintKey, messageKey, "chat:expiring", ...recipientIds.map(memberId => `user:${memberId}:unread`)]
+    const result = await db.eval(atomicPersistMessage, keys, [String(message.timestamp), serializedMessage, expiryRaw, String(message.expiresAt || ""), chatId, fingerprint]) as [number | string, string]
+    return { created: Number(result[0]) === 1, conflict: Number(result[0]) === -1, message: JSON.parse(result[1]) as Message }
 }
 
 async function isValidReplyTarget(chatId: string, replyTo?: { id: string }) {
@@ -89,6 +96,7 @@ export async function POST(req: Request) {
         }
 
         const requestId = payload.requestId || nanoid()
+        const fingerprint = createHash("sha256").update(JSON.stringify({ text, mediaUrl: payload.mediaUrl, mediaType: payload.mediaType, fileName: payload.fileName, fileSize: payload.fileSize, duration: payload.duration, replyTo: payload.replyTo })).digest("hex")
         operation = 'load sender profile'
         const senderRaw = await fetchRedis('get', `user:${session.user.id}`) as string | User | null
         const parsedSender = (typeof senderRaw === 'string' ? JSON.parse(senderRaw) : senderRaw) as User
@@ -111,8 +119,13 @@ export async function POST(req: Request) {
             }
             const rawSenderPreferences = await db.get(groupPreferencesKey(session.user.id, groupId))
             const senderPreferences = groupPreferencesOrDefault(rawSenderPreferences)
-            const existingGroupSend = await db.get(`message:idempotency:${session.user.id}:${chatId}:${requestId}`)
-            if (existingGroupSend) return Response.json(typeof existingGroupSend === "string" ? JSON.parse(existingGroupSend) : existingGroupSend)
+            const groupIdempotencyKey = `message:idempotency:${session.user.id}:${chatId}:${requestId}`
+            const existingGroupSend = await db.get(groupIdempotencyKey)
+            if (existingGroupSend) {
+                const priorFingerprint = await db.get(`${groupIdempotencyKey}:fingerprint`)
+                if (priorFingerprint && priorFingerprint !== fingerprint) return new Response("Idempotency key was already used with a different message payload", { status: 409 })
+                return Response.json(typeof existingGroupSend === "string" ? JSON.parse(existingGroupSend) : existingGroupSend)
+            }
             if (!(await isValidReplyTarget(chatId, payload.replyTo))) {
                 return new Response('Cannot reply to a deleted or system-generated message', { status: 400 })
             }
@@ -142,8 +155,10 @@ export async function POST(req: Request) {
             const allMembers = (await db.smembers(`group:${groupId}:members`)) as string[]
             const recipientMembers = allMembers.filter((memberId) => memberId !== session.user.id)
             operation = 'persist group message atomically'
-            const persisted = await persistMessageOnce({ senderId: session.user.id, chatId, requestId, message, recipientIds: recipientMembers })
-            if (!persisted.created) return Response.json(persisted.message)
+            const persisted = await persistMessageOnce({ senderId: session.user.id, chatId, requestId, fingerprint, message, recipientIds: recipientMembers })
+            if (persisted.conflict) return new Response("Idempotency key was already used with a different message payload", { status: 409 })
+            if (persisted.conflict) return new Response("Idempotency key was already used with a different message payload", { status: 409 })
+        if (!persisted.created) return Response.json(persisted.message)
 
             // Broadcast after persistence. Pusher payloads must stay small: profile images
             // may be stored as data URLs and exceed Pusher's event-size limit.
@@ -192,8 +207,13 @@ export async function POST(req: Request) {
         if (!isFriend) {
             return new Response('Unauthorized', { status: 401 })
         }
-        const existingDirectSend = await db.get(`message:idempotency:${session.user.id}:${chatId}:${requestId}`)
-        if (existingDirectSend) return Response.json(typeof existingDirectSend === "string" ? JSON.parse(existingDirectSend) : existingDirectSend)
+        const directIdempotencyKey = `message:idempotency:${session.user.id}:${chatId}:${requestId}`
+        const existingDirectSend = await db.get(directIdempotencyKey)
+        if (existingDirectSend) {
+            const priorFingerprint = await db.get(`${directIdempotencyKey}:fingerprint`)
+            if (priorFingerprint && priorFingerprint !== fingerprint) return new Response("Idempotency key was already used with a different message payload", { status: 409 })
+            return Response.json(typeof existingDirectSend === "string" ? JSON.parse(existingDirectSend) : existingDirectSend)
+        }
         if (!(await isValidReplyTarget(chatId, payload.replyTo))) {
             return new Response('Cannot reply to a deleted or system-generated message', { status: 400 })
         }
@@ -220,7 +240,7 @@ export async function POST(req: Request) {
         const message = messageValidator.parse(messageData)
 
         operation = 'persist direct message atomically'
-        const persisted = await persistMessageOnce({ senderId: session.user.id, chatId, requestId, message, recipientIds: [friendId] })
+        const persisted = await persistMessageOnce({ senderId: session.user.id, chatId, requestId, fingerprint, message, recipientIds: [friendId] })
         if (!persisted.created) return Response.json(persisted.message)
 
         // Realtime delivery is best-effort: Pusher can reject oversized events (413).
