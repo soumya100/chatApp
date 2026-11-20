@@ -56,6 +56,7 @@ test("message send: direct happy path persists first, then broadcasts and counts
   assert.equal(stored[0].senderId, "owner");
   assert.equal(stored[0].receiverId, "member");
   assert.equal(stored[0].senderName, "Owner");
+  assert.equal(stored[0].clientRequestId, undefined, "legacy callers without a requestId remain supported");
   assert.deepEqual(h.getHash("user:member:unread"), { [DIRECT]: 1 });
   assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 0, "failed broadcast must not be recorded as delivered");
   assert.deepEqual(h.getHash("user:owner:unread"), {});
@@ -70,6 +71,7 @@ test("message send: retries with the same requestId persist and count a direct m
   assert.equal(first.status, 200);
   assert.equal(retry.status, 200);
   assert.equal(retry.data.id, first.data.id, "a retry returns the original server message");
+  assert.equal(first.data.clientRequestId, payload.requestId);
   assert.equal(h.getDirectMessages().length, 1);
   assert.deepEqual(h.getHash("user:member:unread"), { [DIRECT]: 1 });
   assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 1);
