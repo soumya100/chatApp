@@ -366,6 +366,8 @@ test("message read: membership, receipts opt-out and validation", async () => {
   assert.equal((await status(await read.POST(h.request({ chatId: DIRECT })))).status, 401);
   h.reset();
   assert.equal((await status(await read.POST(h.request({ nope: 1 })))).status, 422);
+  assert.equal((await status(await read.POST(h.requestRaw("{invalid")))).status, 400, "malformed JSON must be a client error, not an internal server error");
+  assert.equal((await status(await read.POST(h.request({ chatId: "x".repeat(257) })))).status, 422, "oversized chat identifiers must be rejected");
 });
 
 // ----------------------------------------------------------- message history
