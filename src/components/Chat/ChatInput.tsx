@@ -210,7 +210,6 @@ const ChatInput: FC<ChatInputProps> = ({
           text: replyingTo.text,
           mediaType: replyingTo.mediaType,
         }
-        onCancelReply?.()
       }
 
       // Upload attachment if present via decoupled upload helper
