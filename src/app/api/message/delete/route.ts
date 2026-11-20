@@ -15,7 +15,14 @@ const deleteValidator = z.object({
 function isOwnedVercelBlob(url: string) {
     try {
         const parsed = new URL(url)
-        return parsed.protocol === "https:" && parsed.hostname.endsWith(".public.blob.vercel-storage.com")
+        return parsed.protocol === "https:"
+            && !parsed.username
+            && !parsed.password
+            && !parsed.port
+            && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.public\\.blob\\.vercel-storage\\.com$/i.test(parsed.hostname)
+            && parsed.pathname.length > 1
+            && !parsed.search
+            && !parsed.hash
     } catch {
         return false
     }
@@ -33,7 +40,7 @@ for _, raw in ipairs(rows) do
       return cjson.encode({error = "Forbidden"})
     end
     local cleanupRecord = nil
-    if message.mediaUrl and string.find(message.mediaUrl, "%.public%.blob%.vercel%-storage%.com") then
+    if message.mediaUrl and string.match(message.mediaUrl, "^https://[A-Za-z0-9][A-Za-z0-9%-]*%.public%.blob%.vercel%-storage%.com/") then
       cleanupRecord = cjson.encode({url = message.mediaUrl, queuedAt = tonumber(ARGV[3])})
       redis.call("ZADD", KEYS[2], tonumber(ARGV[3]), cleanupRecord)
     end
