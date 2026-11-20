@@ -164,6 +164,12 @@ test("community admins can add a user directly and keep both membership indexes 
   assert.equal(added.status, 200);
   assert.ok(added.data.community.memberIds.includes("member"));
   assert.ok(h.getSetMembers("user:member:communities").includes(communityId));
+  const ownerListing = await status(await communityCreate.GET());
+  assert.equal(ownerListing.data.communities[0].isAdmin, true);
+  h.setSession("member");
+  const memberListing = await status(await communityCreate.GET());
+  assert.equal(memberListing.data.communities[0].isAdmin, false);
+  h.setSession("owner");
 
   assert.equal((await post({ action: "addMember", memberId: "member" })).status, 409);
   assert.equal((await post({ action: "addMember", memberId: "unknown-user" })).status, 404);
