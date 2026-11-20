@@ -117,6 +117,54 @@ test("Redis Lua integration: poll voting atomically replaces a prior choice and 
   assert.equal(await redis(["GET", key]), unchanged, "invalid vote must not mutate stored feature data");
 });
 
+test("Redis Lua integration: event time-slot voting is atomic, member-isolated, deduplicated and fail-closed", { skip: !enabled }, async () => {
+  const script = lua("src/app/api/group/[groupId]/features/route.ts", "atomicFeatureUpdate");
+  await redis(["FLUSHDB"]);
+  const key = "group:g1:features";
+  await redis(["SET", key, JSON.stringify({
+    polls: [],
+    events: [{ id: "event-1", timeOptions: [
+      { id: "slot-a", startsAt: 1000, votes: [] },
+      { id: "slot-b", startsAt: 2000, votes: [] },
+      { id: "slot-c", startsAt: 3000, votes: [] }
+    ], responses: { going: [], maybe: [], "not-going": [] } }],
+    announcements: []
+  })]);
+
+  const vote = (userId, optionIds) => evalLua(script, [key], [
+    userId, "voteEvent", JSON.stringify({ eventId: "event-1", optionIds })
+  ]);
+
+  const [memberA, memberB] = await Promise.all([
+    vote("member-a", ["slot-a", "slot-a", "slot-b"]),
+    vote("member-b", ["slot-c"])
+  ]);
+  assert.equal(JSON.parse(memberA).error, undefined);
+  assert.equal(JSON.parse(memberB).error, undefined);
+
+  let stored = JSON.parse(await redis(["GET", key]));
+  assert.deepEqual(stored.events[0].timeOptions.map(option => option.votes), [
+    ["member-a"], ["member-a"], ["member-b"]
+  ], "concurrent votes from different users must not overwrite one another");
+
+  await vote("member-a", ["slot-b"]);
+  stored = JSON.parse(await redis(["GET", key]));
+  assert.deepEqual(stored.events[0].timeOptions.map(option => option.votes), [
+    [], ["member-a"], ["member-b"]
+  ], "a member's replacement vote must remove all of their prior selections only");
+
+  const beforeInvalid = await redis(["GET", key]);
+  const invalid = JSON.parse(await vote("attacker", ["not-a-real-slot"]));
+  assert.equal(invalid.error, "Invalid event time selection");
+  assert.equal(await redis(["GET", key]), beforeInvalid, "invalid votes must not mutate persisted event data");
+
+  const missing = JSON.parse(await evalLua(script, [key], [
+    "member-a", "voteEvent", JSON.stringify({ eventId: "missing", optionIds: ["slot-a"] })
+  ]));
+  assert.equal(missing.error, "Event not found");
+  assert.equal(await redis(["GET", key]), beforeInvalid, "unknown events must not mutate persisted data");
+});
+
 test("Redis Lua integration: creating a group feature atomically writes its inbox message and expiry index", { skip: !enabled }, async () => {
   const script = lua("src/app/api/group/[groupId]/features/route.ts", "atomicFeatureUpdate");
   await redis(["FLUSHDB"]);
