@@ -122,7 +122,7 @@ export const authOptions: NextAuthOptions = {
             // authoritative user record on refresh so deleted accounts lose
             // access instead of retaining a valid-looking stale session.
             if (!token?.id || typeof token.id !== "string") {
-                return null
+                return { ...token, id: "", exp: 0 }
             }
 
             const dbUserResult = (await fetchRedis("get", `user:${token.id}`)) as string | User | null
@@ -130,12 +130,12 @@ export const authOptions: NextAuthOptions = {
             // Returning null tells NextAuth to invalidate the JWT/session.
             // Do not fall back to stale claims when the account has been removed.
             if (!dbUserResult) {
-                return null
+                return { ...token, id: "", exp: 0 }
             }
 
             const dbUser = (typeof dbUserResult === "string" ? JSON.parse(dbUserResult) : dbUserResult) as User
             if (!dbUser?.id || dbUser.id !== token.id) {
-                return null
+                return { ...token, id: "", exp: 0 }
             }
 
             return {
