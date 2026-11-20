@@ -86,7 +86,7 @@ test("event poll validation: rejects one, seven, malformed, and past time option
   h.reset();
   const invalidChoices = [
     [future(3)],
-    [future(3), future(3)],
+    (() => { const sameTime = future(3); return [sameTime, sameTime]; })(),
     Array.from({ length: 7 }, (_, i) => future(i + 3)),
     [future(3), "not-a-date"],
     [future(3), Date.now() - 1],
