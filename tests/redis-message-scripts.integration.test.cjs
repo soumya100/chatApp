@@ -103,13 +103,15 @@ test("Redis Lua integration: message delete strips media fields atomically", { s
   await redis(["ZADD", CHAT, "1000", seedMessage("m1", { mediaUrl: "https://bucket.public.blob.vercel-storage.com/a.png", mediaType: "image", fileName: "a.png", fileSize: 5, senderImg: "/owner.png" })]);
 
   assert.deepEqual(JSON.parse(await evalLua(script, [CHAT], ["m1", "attacker"])), { error: "Forbidden" });
-  const deleted = JSON.parse(await evalLua(script, [CHAT], ["m1", "owner"]));
+  const cleanupKey = "media:cleanup"
+  const deleted = JSON.parse(await evalLua(script, [CHAT, cleanupKey], ["m1", "owner", "1700000000000"]));
   assert.equal(deleted.message.isDeleted, true);
   assert.equal(deleted.message.text, "This message was deleted");
   assert.equal(deleted.message.mediaUrl, undefined);
   assert.equal(deleted.message.fileName, undefined);
   assert.equal(deleted.message.senderImg, undefined);
   assert.equal((await rows(CHAT)).length, 1, "the row is replaced, not duplicated");
+  assert.equal((await rows(cleanupKey)).length, 1, "the Blob URL is durably queued for cleanup");
 });
 
 test("Redis Lua integration: message react toggles per-user without losing other reactions", { skip: !enabled }, async () => {
