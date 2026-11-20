@@ -34,6 +34,26 @@ test("upload: completed but unclaimed Blob uploads enter the orphan index", asyn
   assert.deepEqual(await h.db.zrange("media:orphans", 0, -1), [url]);
 });
 
+test("upload: rejects URLs that only contain the trusted Blob domain as a substring", async () => {
+  h.reset();
+  const forgedUrls = [
+    "https://evil.example/.public.blob.vercel-storage.com/file.png",
+    "https://evil.public.blob.vercel-storage.com.attacker.example/file.png",
+    "https://evil.example/?next=.public.blob.vercel-storage.com/file.png",
+    "https://user@bucket.public.blob.vercel-storage.com/file.png",
+    "http://bucket.public.blob.vercel-storage.com/file.png",
+    "https://bucket.public.blob.vercel-storage.com.evil/file.png",
+  ];
+  const request = new Request("http://localhost/api/upload", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "blob.upload-completed", payload: { files: forgedUrls.map(url => ({ url, contentType: "image/png" })) } }),
+  });
+  const result = await upload.POST(request);
+  assert.equal(result.status, 200);
+  assert.deepEqual(await h.db.zrange("media:orphans", 0, -1), []);
+});
+
 test("message send: attaching an uploaded Blob removes its orphan marker atomically", async () => {
   h.reset();
   h.seedSet("user:owner:friends", ["member"]);
@@ -46,6 +66,22 @@ test("message send: attaching an uploaded Blob removes its orphan marker atomica
     body: JSON.stringify({ chatId: "owner--member", text: "", mediaUrl: url, mediaType: "image", requestId: "attach-orphan-0001" }),
   }));
   assert.equal(response.status, 200);
+  assert.equal((await h.db.zrange("media:orphans", 0, -1)).length, 0);
+});
+
+test("media cleanup: ignores forged hostnames and removes their invalid jobs", async () => {
+  h.reset();
+  const forged = "https://evil.example/.public.blob.vercel-storage.com/not-owned.png";
+  const record = JSON.stringify({ url: forged, queuedAt: Date.now() });
+  await h.db.zadd("media:cleanup", { score: Date.now(), member: record });
+  await h.db.zadd("media:orphans", { score: Date.now() - 8 * 24 * 60 * 60 * 1000, member: forged });
+
+  const result = await responseData(await cleanup.GET(new Request("http://localhost/api/maintenance/media-cleanup", {
+    headers: { authorization: "Bearer test-cron-secret" },
+  })));
+  assert.equal(result.status, 200);
+  assert.deepEqual(h.blobCalls, [], "untrusted URLs must never be sent to Blob deletion");
+  assert.equal((await h.db.zrange("media:cleanup", 0, -1)).length, 0);
   assert.equal((await h.db.zrange("media:orphans", 0, -1)).length, 0);
 });
 
