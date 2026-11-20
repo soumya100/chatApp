@@ -75,6 +75,7 @@ const Chat: FC<ChatProps> = ({
   }, [initialMessages])
 
   useEffect(() => {
+    setTypingUserIds([])
     // 1. Presence channel for tracking active partner in chat room
     const presenceChannelKey = toPusherKey(`presence-chat:${chatId}`)
     const presenceChannel = pusherClient.subscribe(presenceChannelKey) as any
