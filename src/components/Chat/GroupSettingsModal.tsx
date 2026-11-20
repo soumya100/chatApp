@@ -119,7 +119,7 @@ const GroupSettingsModal: FC<Props> = ({ isOpen, onClose, group, sessionId, onGr
       <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-md transition-opacity" aria-hidden="true" />
       <div className="fixed inset-0 z-10 flex items-center justify-center p-0 sm:p-5">
         <Dialog.Panel className="flex max-h-[100dvh] w-full flex-col overflow-hidden bg-white text-slate-900 shadow-2xl dark:bg-slate-900 dark:text-slate-100 sm:max-h-[min(88vh,820px)] sm:max-w-3xl sm:rounded-3xl sm:border sm:border-slate-200 dark:sm:border-white/10">
-          <header className="relative shrink-0 border-b border-slate-200 bg-gradient-to-br from-slate-50 via-white to-white px-5 pb-5 pt-5 dark:border-white/10 dark:from-zinc-800/40 dark:via-slate-900 dark:to-slate-900 sm:px-7 sm:pt-7">
+          <header className="relative shrink-0 border-b border-slate-200 bg-gradient-to-br from-slate-50 via-white to-white px-5 pb-5 pt-5 dark:border-white/10 dark:from-slate-800/60 dark:via-slate-900 dark:to-slate-900 sm:px-7 sm:pt-7">
             <div className="flex items-start justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3.5">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20">
