@@ -364,6 +364,7 @@ test("group pins: authentication, membership and request validation are enforced
 
 test("group pins: admin-only policy blocks members while admins can pin and unpin", async () => {
   h.reset({ group: { settings: { onlyAdminsCanPinMessages: true } } });
+  h.seedSet("group:g1:members", ["owner", "admin", "member"]);
   h.setMessages([{ id: "m1", senderId: "member", timestamp: 10, text: "Hello" }]);
   h.setSession("member");
   assert.equal((await read(await post(pins, { messageId: "m1", pinned: true }))).status, 403);
@@ -378,6 +379,7 @@ test("group pins: admin-only policy blocks members while admins can pin and unpi
 
 test("group pins: system and deleted messages cannot be pinned", async () => {
   h.reset();
+  h.seedSet("group:g1:members", ["owner", "admin", "member"]);
   h.setMessages([
     { id: "system", senderId: "system", timestamp: 10, text: "System" },
     { id: "deleted", senderId: "member", isDeleted: true, timestamp: 11, text: "Deleted" },
@@ -389,6 +391,7 @@ test("group pins: system and deleted messages cannot be pinned", async () => {
 
 test("group pins: list excludes expired/deleted messages and is newest-pin first", async () => {
   h.reset();
+  h.seedSet("group:g1:members", ["owner", "admin", "member"]);
   h.setMessages([
     { id: "old", senderId: "member", isPinned: true, timestamp: 10, pinnedAt: 10 },
     { id: "new", senderId: "member", isPinned: true, timestamp: 20, pinnedAt: 20 },
@@ -502,6 +505,7 @@ test("group routes reject malformed JSON with 400, not an internal server error"
 
 test("group and activity mutations remain successful when Pusher is unavailable", async () => {
   h.reset();
+  h.seedSet("group:g1:members", ["owner", "admin", "member"]);
   h.setPusherFailure(true);
   const groupUpdate = await read(await post(manage, { action: "update", name: "Pusher down" }));
   assert.equal(groupUpdate.status, 200);
