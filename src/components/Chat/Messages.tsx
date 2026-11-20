@@ -1018,7 +1018,7 @@ const Messages: FC<MessagesProps> = ({
                   ) : (
                     /* Regular text & timestamps & status */
                     <>
-                      {message.text && (
+                      {message.text && message.featureType !== 'announcement' && (
                         <p className='break-words text-sm'>
                           {message.featureType === 'announcement' && !message.isDeleted && <Megaphone size={14} className='mr-1.5 inline-block align-[-2px] text-amber-200' aria-label='Announcement' />}
                           {message.text}
