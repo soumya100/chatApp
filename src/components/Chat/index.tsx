@@ -170,8 +170,8 @@ const Chat: FC<ChatProps> = ({
   }, [chatId, chatPartner.id, groupId, isGroupChat, router, sessionId])
 
   // Optimistic message sending handler
-  const handleSendMessage = async (text: string, mediaPayload: any = {}) => {
-    const tempId = `temp-${Date.now()}-${nanoid(6)}`
+  const handleSendMessage = async (text: string, mediaPayload: any = {}, requestId?: string) => {
+    const tempId = requestId || `temp-${Date.now()}-${nanoid(6)}`
     const optimisticMessage: Message = {
       id: tempId,
       senderId: sessionId,
