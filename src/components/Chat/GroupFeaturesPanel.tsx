@@ -4,7 +4,9 @@ import { FC, FormEvent, useCallback, useEffect, useState } from "react"
 import axios from "axios"
 import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
-import { CalendarDays, Check, Loader2, Megaphone, X } from "lucide-react"
+import { CalendarDays, Check, Loader2, Megaphone, X, Users } from "lucide-react"
+import { pusherClient } from "@/lib/pusher"
+import { toPusherKey } from "@/lib/utils"
 
 interface Props { isOpen: boolean; onClose: () => void; groupId: string; isAdmin: boolean }
 type FeatureData = { polls: any[]; events: any[]; announcements: any[] }
@@ -30,7 +32,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
     catch { toast.error("Unable to load group features") }
     finally { if (showLoading) setLoading(false) }
   }, [groupId])
-  useEffect(() => { if (isOpen) void load() }, [isOpen, load])
+  useEffect(() => { if (!isOpen) return; void load(); const channel = pusherClient.subscribe(toPusherKey("private-chat:group--" + groupId)); const refresh = () => { void load(false) }; channel.bind("group_feature_updated", refresh); return () => { channel.unbind("group_feature_updated", refresh) } }, [isOpen, load, groupId])
 
   const act = async (payload: any): Promise<boolean> => {
     if (busy) return false
