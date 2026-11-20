@@ -216,11 +216,9 @@ const ChatInput: FC<ChatInputProps> = ({
         }
       }
 
-      // Clear input and attachment immediately for optimistic UX
-      setInput('')
-      removeAttachment()
-      textAreaRef.current?.focus()
-
+      // Keep the draft and attachment until the server confirms acceptance.
+      // Clearing before the request succeeds loses messages on offline/network/API
+      // failures and makes safe manual retry impossible.
       if (onSendMessage) {
         await onSendMessage(trimmed, mediaPayload)
       } else {
@@ -230,6 +228,11 @@ const ChatInput: FC<ChatInputProps> = ({
           ...mediaPayload,
         })
       }
+
+      setInput('')
+      removeAttachment()
+      if (replyingTo) onCancelReply?.()
+      textAreaRef.current?.focus()
     } catch (error: any) {
       toast.error(error?.response?.data || error?.message || 'Something went wrong. Please try later')
     } finally {
@@ -250,7 +253,9 @@ const ChatInput: FC<ChatInputProps> = ({
   }
 
   return (
-    <div className='border-t border-gray-200 dark:border-zinc-800 px-4 pt-3 mb-2 sm:mb-0'>
+    <div className='border-t border-gray-200 dark:border-zinc-800 px-4 pt-3 mb-2 sm:mb-0' aria-busy={isLoading}>
+      {isLoading && <p role='status' aria-live='polite' className='mb-2 text-xs text-indigo-600 dark:text-indigo-400'>Sending message… Your draft will remain here if sending fails.</p>}
+
       {/* Pending attachment preview */}
       {attachment && (
         <div className='mb-2 flex items-center gap-3 p-2 rounded-lg bg-gray-50 dark:bg-zinc-800/80 border border-gray-200 dark:border-zinc-700 w-fit max-w-sm'>
