@@ -236,6 +236,19 @@ test("message send: sliding-window rate limit rejects the 16th message within 10
   assert.equal(h.getDirectMessages().length, 15, "the rejected message must not be persisted");
 });
 
+
+test("message send: concurrent bursts cannot race past the atomic sliding-window limit", async () => {
+  h.reset();
+  seedDirectFriendship();
+  const attempts = await Promise.all(Array.from({ length: 30 }, (_, index) =>
+    send.POST(h.request({ chatId: DIRECT, text: `parallel ${index}`, requestId: `parallel-rate-${index}-0001` }))
+  ));
+  const statuses = await Promise.all(attempts.map(response => response.status));
+  assert.equal(statuses.filter(value => value === 200).length, 15);
+  assert.equal(statuses.filter(value => value === 429).length, 15);
+  assert.equal(h.getDirectMessages().length, 15);
+});
+
 // --------------------------------------------------------------- message edit
 test("message edit: authorization boundary (unauthenticated, non-member, non-sender)", async () => {
   h.reset({ session: null });
