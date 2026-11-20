@@ -377,6 +377,7 @@ const ChatInput: FC<ChatInputProps> = ({
             rows={1}
             value={input}
             onChange={handleInputChange}
+            disabled={isLoading}
             placeholder={`Message ${chatPartner}...`}
             aria-label={`Message ${chatPartner}`}
             className='block w-full h-full resize-none border-0 bg-transparent text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:ring-0 sm:py-2 sm:leading-6 sm:text-sm pl-3 pr-32'
@@ -394,6 +395,7 @@ const ChatInput: FC<ChatInputProps> = ({
               type='file'
               ref={fileInputRef}
               onChange={handleFileSelect}
+              disabled={isLoading}
               className='hidden'
               accept='image/png,image/jpeg,image/gif,image/webp,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip'
               aria-label='Upload attachment'
@@ -403,6 +405,7 @@ const ChatInput: FC<ChatInputProps> = ({
             <button
               type='button'
               onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading}
               className='p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors'
               title='Attach image, video, audio or document'
               aria-label='Attach file, image or document'
@@ -414,6 +417,7 @@ const ChatInput: FC<ChatInputProps> = ({
             <button
               type='button'
               onClick={videoNoteRecorder.openModal}
+              disabled={isLoading}
               className='p-1.5 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors'
               title='Record circular video message'
               aria-label='Record video message'
@@ -425,6 +429,7 @@ const ChatInput: FC<ChatInputProps> = ({
             <button
               type='button'
               onClick={audioRecorder.startRecording}
+              disabled={isLoading}
               className='p-1.5 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors'
               title='Record voice note'
               aria-label='Record voice message'
