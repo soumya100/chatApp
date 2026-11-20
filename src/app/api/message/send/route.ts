@@ -43,7 +43,8 @@ end
 redis.call("ZADD", KEYS[3], ARGV[1], ARGV[2])
 if ARGV[3] ~= "" then redis.call("ZADD", KEYS[4], ARGV[4], ARGV[3]) end
 redis.call("ZADD", KEYS[5], ARGV[1], ARGV[7])
-for index = 6, #KEYS do redis.call("HINCRBY", KEYS[index], ARGV[5], 1) end
+if ARGV[8] ~= "" then redis.call("ZREM", KEYS[6], ARGV[8]) end
+for index = 7, #KEYS do redis.call("HINCRBY", KEYS[index], ARGV[5], 1) end
 redis.call("SET", KEYS[1], ARGV[2], "EX", 86400)
 redis.call("SET", KEYS[2], ARGV[6], "EX", 86400)
 return { 1, ARGV[2] }
@@ -57,8 +58,8 @@ async function persistMessageOnce(options: { senderId: string; chatId: string; r
     const serializedMessage = JSON.stringify(message)
     const expiryRaw = message.expiresAt ? JSON.stringify({ chatKey: messageKey, messageId: message.id, raw: serializedMessage }) : ""
     const deliveryKey = `chat:${chatId}:delivery:outbox`
-    const keys = [idempotencyKey, fingerprintKey, messageKey, "chat:expiring", deliveryKey, ...recipientIds.map(memberId => `user:${memberId}:unread`)]
-    const result = await db.eval(atomicPersistMessage, keys, [String(message.timestamp), serializedMessage, expiryRaw, String(message.expiresAt || ""), chatId, fingerprint, outboxRecord]) as [number | string, string]
+    const keys = [idempotencyKey, fingerprintKey, messageKey, "chat:expiring", deliveryKey, "media:orphans", ...recipientIds.map(memberId => `user:${memberId}:unread`)]
+    const result = await db.eval(atomicPersistMessage, keys, [String(message.timestamp), serializedMessage, expiryRaw, String(message.expiresAt || ""), chatId, fingerprint, outboxRecord, message.mediaUrl || ""]) as [number | string, string]
     return { created: Number(result[0]) === 1, conflict: Number(result[0]) === -1, message: JSON.parse(result[1]) as Message }
 }
 
