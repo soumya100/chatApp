@@ -89,19 +89,6 @@ export async function POST(req: Request) {
         }
 
         const requestId = payload.requestId || nanoid()
-        // Rate limit: max 15 new messages per 10 seconds
-        operation = 'rate limit'
-        const { success: isAllowed } = await rateLimit(session.user.id, 'send_message', {
-            limit: 15,
-            windowSeconds: 10
-        })
-        if (!isAllowed) {
-            return new Response('Too many messages sent. Please slow down.', {
-                status: 429,
-                headers: { 'Retry-After': '5' }
-            })
-        }
-
         operation = 'load sender profile'
         const senderRaw = await fetchRedis('get', `user:${session.user.id}`) as string | User | null
         const parsedSender = (typeof senderRaw === 'string' ? JSON.parse(senderRaw) : senderRaw) as User
@@ -129,6 +116,8 @@ export async function POST(req: Request) {
             }
             const existingGroupSend = await db.get(`message:idempotency:${session.user.id}:${chatId}:${requestId}`)
             if (existingGroupSend) return Response.json(typeof existingGroupSend === "string" ? JSON.parse(existingGroupSend) : existingGroupSend)
+            const { success: isAllowed } = await rateLimit(session.user.id, 'send_message', { limit: 15, windowSeconds: 10 })
+            if (!isAllowed) return new Response('Too many messages sent. Please slow down.', { status: 429, headers: { 'Retry-After': '5' } })
 
             const messageData = {
                 id: nanoid(),
@@ -207,6 +196,8 @@ export async function POST(req: Request) {
         }
         const existingDirectSend = await db.get(`message:idempotency:${session.user.id}:${chatId}:${requestId}`)
         if (existingDirectSend) return Response.json(typeof existingDirectSend === "string" ? JSON.parse(existingDirectSend) : existingDirectSend)
+        const { success: isAllowed } = await rateLimit(session.user.id, 'send_message', { limit: 15, windowSeconds: 10 })
+        if (!isAllowed) return new Response('Too many messages sent. Please slow down.', { status: 429, headers: { 'Retry-After': '5' } })
 
         const messageData = {
             id: nanoid(),
