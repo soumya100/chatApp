@@ -496,7 +496,7 @@ test("message typing: participants broadcast, strangers are rejected", async () 
   const stop = await status(await typing.POST(h.request({ chatId: DIRECT, isTyping: false })));
   assert.equal(stop.status, 200);
   h.setSession("outsider");
-  assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT })))).status, 401);
+  assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT })))).status, 403);
   h.reset({ session: null });
   assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT })))).status, 401);
   h.reset();
