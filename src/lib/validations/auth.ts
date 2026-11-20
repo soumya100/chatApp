@@ -2,19 +2,24 @@ import { z } from "zod"
 
 // VAPT Input Sanitization: Removes dangerous HTML/script tags from strings
 export function sanitizeText(text: string): string {
-    return text
-        .replace(/<[^>]*>?/gm, "") // Strip HTML tags
-        .replace(/[<>"'&]/g, (match) => {
-            const entities: Record<string, string> = {
-                "<": "&lt;",
-                ">": "&gt;",
-                '"': "&quot;",
-                "'": "&#x27;",
-                "&": "&amp;",
-            }
-            return entities[match] || match
-        })
-        .trim()
+    let sanitized = text
+    let previous: string
+
+    do {
+        previous = sanitized
+        sanitized = sanitized.replace(/<[^>]*>?/gm, "")
+    } while (sanitized !== previous)
+
+    return sanitized.replace(/[<>"'&]/g, (match) => {
+        const entities: Record<string, string> = {
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#x27;",
+            "&": "&amp;",
+        }
+        return entities[match] || match
+    }).trim()
 }
 
 export const registerSchema = z.object({
@@ -53,4 +58,3 @@ export const loginSchema = z.object({
 
 export type RegisterInput = z.infer<typeof registerSchema>
 export type LoginInput = z.infer<typeof loginSchema>
-
