@@ -64,6 +64,9 @@ jobs:
       - name: Lint
         run: yarn lint
 
+      - name: Validate staging test script syntax
+        run: node --check scripts/staging-validation.cjs
+
   redis-lua-integration:
     name: Real Redis Lua integration tests
     runs-on: ubuntu-latest
