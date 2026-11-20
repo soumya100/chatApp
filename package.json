@@ -19,7 +19,8 @@
     "test:all": "yarn test && yarn test:redis && yarn typecheck && yarn lint && yarn build && yarn audit:security",
     "audit:security": "node scripts/audit-dependencies.cjs",
     "test:redis": "node -e \"if (!process.env.REDIS_HOST || process.env.REDIS_INTEGRATION_ALLOW_FLUSHDB !== \\\"1\\\") { console.error(\\\"Set REDIS_HOST and REDIS_INTEGRATION_ALLOW_FLUSHDB=1 for a disposable Redis test instance; these tests run FLUSHDB.\\\"); process.exit(1); }\" && node --test --test-concurrency=1 tests/redis-lua.integration.test.cjs tests/redis-message-scripts.integration.test.cjs",
-    "test:events": "node --test tests/event-polls-api.test.cjs tests/event-polls-ui.test.cjs"
+    "test:events": "node --test tests/event-polls-api.test.cjs tests/event-polls-ui.test.cjs",
+    "test:staging": "node scripts/staging-validation.cjs"
   },
   "dependencies": {
     "@headlessui/react": "^1.7.19",
