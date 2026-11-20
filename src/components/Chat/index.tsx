@@ -142,9 +142,13 @@ const Chat: FC<ChatProps> = ({
     const onOnline = () => { void flushOfflineQueue() }
     void restoreAndFlush()
     window.addEventListener('online', onOnline)
+    window.addEventListener('focus', onOnline)
+    document.addEventListener('visibilitychange', onOnline)
     return () => {
       active = false
       window.removeEventListener('online', onOnline)
+      window.removeEventListener('focus', onOnline)
+      document.removeEventListener('visibilitychange', onOnline)
     }
   }, [chatId, sessionId, chatPartner.id, flushOfflineQueue])
 
