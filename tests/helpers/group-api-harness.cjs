@@ -288,6 +288,7 @@ function isInvalidPollSelection(poll, optionIds) {
 }
 
 const db = {
+  async ping() { return "PONG"; },
   async get(key) {
     return readRaw(key);
   },
@@ -372,6 +373,38 @@ const db = {
   async zrange(key, start, end, options) { return zrange(key, start, end, options); },
   async eval(script, keys, args) {
     if (scriptRaceHook) scriptRaceHook(script, keys, args);
+    if (script.includes("sliding-window-rate-limit-v1")) {
+      const now = Number(args[0]);
+      const windowMs = Number(args[1]);
+      const limit = Number(args[2]);
+      zremrangebyscore(keys[0], "-inf", now - windowMs);
+      zadd(keys[0], { score: now, member: args[3] });
+      const count = zcard(keys[0]);
+      applyExpire(keys[0], Math.max(1, Math.ceil((windowMs * 2) / 1000)));
+      return [count, count <= limit ? 1 : 0];
+    }
+    if (script.includes("chat-message-idempotency-v1")) {
+      const existing = readRaw(keys[0]);
+      if (existing) {
+        const previousFingerprint = readRaw(keys[1]);
+        if (previousFingerprint && previousFingerprint !== args[5]) return [-1, existing];
+        return [0, existing];
+      }
+      zadd(keys[2], { score: Number(args[0]), member: args[1] });
+      if (args[2]) zadd(keys[3], { score: Number(args[3]), member: args[2] });
+      zadd(keys[4], { score: Number(args[0]), member: args[6] });
+      if (args[7]) zrem(keys[5], args[7]);
+      for (let index = 6; index < keys.length; index += 1) {
+        const fields = hashFields(keys[index]);
+        fields[args[4]] = Number(fields[args[4]] || 0) + 1;
+        hashes.set(keys[index], fields);
+      }
+      writeRaw(keys[0], args[1]);
+      writeRaw(keys[1], args[5]);
+      applyExpire(keys[0], 86400);
+      applyExpire(keys[1], 86400);
+      return [1, args[1]];
+    }
     if (script.includes(LUA_FEATURES_SCRIPT_MARKER)) {
       const groupId = keys[0].slice("group:".length, -":features".length);
       const userId = args[0];
@@ -403,6 +436,17 @@ const db = {
         state.events.unshift(payload);
         state.events = state.events.slice(0, 100);
         result = payload;
+      } else if (action === "voteEvent") {
+        const event = state.events.find(item => item.id === payload.eventId);
+        if (!event) return JSON.stringify({ error: "Event not found" });
+        if (!Array.isArray(event.timeOptions) || event.timeOptions.length === 0) return JSON.stringify({ error: "This event has no time poll" });
+        const selected = [...new Set(payload.optionIds)];
+        if (selected.some(id => !event.timeOptions.some(option => option.id === id))) return JSON.stringify({ error: "Invalid event time selection" });
+        for (const option of event.timeOptions) {
+          option.votes = (option.votes || []).filter(id => id !== userId);
+          if (selected.includes(option.id)) option.votes.push(userId);
+        }
+        result = event;
       } else if (action === "respondEvent") {
         const event = state.events.find(item => item.id === payload.eventId);
         if (!event) return JSON.stringify({ error: "Event not found" });
@@ -475,6 +519,11 @@ const db = {
       const message = parse(rows[index].member);
       if (message.senderId === "system" || message.isDeleted) return JSON.stringify({ error: "Message cannot be deleted" });
       if (message.senderId !== args[1]) return JSON.stringify({ error: "Forbidden" });
+      let cleanupRecord = null;
+      if (message.mediaUrl && /https:\/\/[^/]+\.public\.blob\.vercel-storage\.com\//.test(message.mediaUrl)) {
+        cleanupRecord = JSON.stringify({ url: message.mediaUrl, queuedAt: Number(args[2]) });
+        zadd(keys[1], { score: Number(args[2]), member: cleanupRecord });
+      }
       message.text = "This message was deleted";
       message.isDeleted = true;
       delete message.mediaUrl;
@@ -485,7 +534,7 @@ const db = {
       delete message.senderImg;
       rows[index] = { score: rows[index].score, member: JSON.stringify(message) };
       zsets.set(keys[0], rows);
-      return JSON.stringify({ message });
+      return JSON.stringify({ message, cleanupRecord });
     }
 
     if (script.includes("Message cannot be reacted to")) {

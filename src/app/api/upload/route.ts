@@ -1,10 +1,31 @@
 import { authOptions } from "@/lib/auth"
+import { db } from "@/lib/db"
+import { rateLimit } from "@/lib/ratelimit"
 import { handleUpload } from "@vercel/blob/client"
 import { getServerSession } from "next-auth"
 
 export const runtime = "nodejs"
 
 const MAX_UPLOAD_SIZE = 30 * 1024 * 1024
+
+// Accept only a single Vercel Blob store hostname. Substring checks are unsafe:
+// an attacker can place the trusted suffix in a path, query, or unrelated host.
+function isOwnedVercelBlobUrl(value: unknown): value is string {
+    if (typeof value !== "string") return false
+    try {
+        const parsed = new URL(value)
+        return parsed.protocol === "https:"
+            && !parsed.username
+            && !parsed.password
+            && !parsed.port
+            && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.public\.blob\.vercel-storage\.com$/i.test(parsed.hostname)
+            && parsed.pathname.length > 1
+            && !parsed.search
+            && !parsed.hash
+    } catch {
+        return false
+    }
+}
 
 // Exact MIME allow-list. Wildcards like "image/*" are deliberately avoided:
 // an image/* entry also admits image/svg+xml, and SVG served inline executes
@@ -62,6 +83,11 @@ export async function POST(request: Request) {
                     throw new Error("Unauthorized")
                 }
 
+                // Limit token creation per authenticated user to stop upload
+                // endpoint abuse before a Blob token is minted.
+                const quota = await rateLimit(session.user.id, "blob_upload", { limit: 10, windowSeconds: 60 * 60 })
+                if (!quota.success) throw new Error("UPLOAD_RATE_LIMITED")
+
                 return {
                     allowedContentTypes: ALLOWED_CONTENT_TYPES,
                     maximumSizeInBytes: MAX_UPLOAD_SIZE,
@@ -71,6 +97,20 @@ export async function POST(request: Request) {
             }
         })
 
+        if (body?.type === "blob.upload-completed") {
+            const completedUrls = new Set<string>()
+            const candidates = [body?.payload?.blob, body?.payload, ...(Array.isArray(body?.payload?.files) ? body.payload.files : [])]
+            for (const candidate of candidates) {
+                const url = candidate?.url
+                if (isOwnedVercelBlobUrl(url)) completedUrls.add(url)
+            }
+            for (const url of completedUrls) {
+                // The message-send Lua transaction removes this marker atomically
+                // when the upload is attached. Unclaimed uploads expire via cron.
+                await db.zadd("media:orphans", { score: Date.now(), member: url })
+            }
+        }
+
         return Response.json(jsonResponse)
     } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to initialize upload"
@@ -78,7 +118,7 @@ export async function POST(request: Request) {
 
         return Response.json(
             { error: message },
-            { status: message === "Unauthorized" ? 401 : 400 }
+            { status: message === "Unauthorized" ? 401 : message === "UPLOAD_RATE_LIMITED" ? 429 : 400 }
         )
     }
 }

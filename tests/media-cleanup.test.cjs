@@ -1,0 +1,143 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const h = require("./helpers/group-api-harness.cjs");
+
+const cleanup = h.loadRoute("src/app/api/maintenance/media-cleanup/route.ts");
+const upload = h.loadRoute("src/app/api/upload/route.ts");
+const send = h.loadRoute("src/app/api/message/send/route.ts");
+const expiryCleanup = h.loadRoute("src/app/api/cron/cleanup-expired-messages/route.ts");
+const redisHealth = h.loadRoute("src/app/api/health/redis/route.ts");
+
+const oldSecret = process.env.CRON_SECRET;
+process.env.CRON_SECRET = "test-cron-secret";
+const responseData = async response => ({ status: response.status, data: await response.json() });
+
+test.after(() => {
+  if (oldSecret === undefined) delete process.env.CRON_SECRET;
+  else process.env.CRON_SECRET = oldSecret;
+});
+
+test("expiry cleanup: rejects forged Blob hostnames without calling Blob deletion", async () => {
+  h.reset();
+  const oldSecret = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "test-cron-secret";
+  try {
+    const forged = "https://evil.example/.public.blob.vercel-storage.com/expired.png";
+    const message = { id: "expired-1", senderId: "owner", text: "", timestamp: Date.now() - 10000, expiresAt: Date.now() - 1000, mediaUrl: forged, mediaType: "image" };
+    const raw = JSON.stringify(message);
+    h.seedZsetEntry("chat:owner--member:messages", message.timestamp, raw);
+    h.seedZsetEntry("chat:expiring", message.expiresAt, { chatKey: "chat:owner--member:messages", messageId: message.id, raw });
+    const result = await responseData(await expiryCleanup.GET(new Request("http://localhost/api/cron/cleanup-expired-messages", {
+      headers: { authorization: "Bearer test-cron-secret" },
+    })));
+    assert.equal(result.status, 200);
+    assert.deepEqual(h.blobCalls, [], "an attacker-controlled URL must never reach Blob deletion");
+    assert.equal(h.getZset("chat:owner--member:messages").length, 0, "the expired message record is still removed");
+  } finally {
+    if (oldSecret === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = oldSecret;
+  }
+});
+
+
+test("Redis health probe requires the cron secret and reports only aggregate queue state", async () => {
+  h.reset();
+  const unauthorized = await redisHealth.GET(new Request("http://localhost/api/health/redis"));
+  assert.equal(unauthorized.status, 401);
+  const result = await responseData(await redisHealth.GET(new Request("http://localhost/api/health/redis", {
+    headers: { authorization: "Bearer test-cron-secret" },
+  })));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.status, "ok");
+  assert.equal(result.data.redis, "reachable");
+  assert.deepEqual(result.data.queues, { expiry: 0, mediaCleanup: 0, mediaOrphans: 0 });
+  assert.equal(JSON.stringify(result.data).includes("owner"), false);
+});
+
+test("media cleanup: scheduled endpoint rejects unauthenticated callers", async () => {
+  h.reset();
+  const result = await cleanup.GET(new Request("http://localhost/api/maintenance/media-cleanup"));
+  assert.equal(result.status, 401);
+});
+
+test("upload: completed but unclaimed Blob uploads enter the orphan index", async () => {
+  h.reset();
+  const url = "https://bucket.public.blob.vercel-storage.com/abandoned.png";
+  const request = new Request("http://localhost/api/upload", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "blob.upload-completed", payload: { files: [{ url, contentType: "image/png" }] } }),
+  });
+  const result = await upload.POST(request);
+  assert.equal(result.status, 200);
+  assert.deepEqual(await h.db.zrange("media:orphans", 0, -1), [url]);
+});
+
+test("upload: rejects URLs that only contain the trusted Blob domain as a substring", async () => {
+  h.reset();
+  const forgedUrls = [
+    "https://evil.example/.public.blob.vercel-storage.com/file.png",
+    "https://evil.public.blob.vercel-storage.com.attacker.example/file.png",
+    "https://evil.example/?next=.public.blob.vercel-storage.com/file.png",
+    "https://user@bucket.public.blob.vercel-storage.com/file.png",
+    "http://bucket.public.blob.vercel-storage.com/file.png",
+    "https://bucket.public.blob.vercel-storage.com.evil/file.png",
+  ];
+  const request = new Request("http://localhost/api/upload", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "blob.upload-completed", payload: { files: forgedUrls.map(url => ({ url, contentType: "image/png" })) } }),
+  });
+  const result = await upload.POST(request);
+  assert.equal(result.status, 200);
+  assert.deepEqual(await h.db.zrange("media:orphans", 0, -1), []);
+});
+
+test("message send: attaching an uploaded Blob removes its orphan marker atomically", async () => {
+  h.reset();
+  h.seedSet("user:owner:friends", ["member"]);
+  h.seedSet("user:member:friends", ["owner"]);
+  const url = "https://bucket.public.blob.vercel-storage.com/attached.png";
+  await h.db.zadd("media:orphans", { score: Date.now(), member: url });
+  const response = await send.POST(new Request("http://localhost/api/message/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chatId: "owner--member", text: "", mediaUrl: url, mediaType: "image", requestId: "attach-orphan-0001" }),
+  }));
+  assert.equal(response.status, 200);
+  assert.equal((await h.db.zrange("media:orphans", 0, -1)).length, 0);
+});
+
+test("media cleanup: ignores forged hostnames and removes their invalid jobs", async () => {
+  h.reset();
+  const forged = "https://evil.example/.public.blob.vercel-storage.com/not-owned.png";
+  const record = JSON.stringify({ url: forged, queuedAt: Date.now() });
+  await h.db.zadd("media:cleanup", { score: Date.now(), member: record });
+  await h.db.zadd("media:orphans", { score: Date.now() - 8 * 24 * 60 * 60 * 1000, member: forged });
+
+  const result = await responseData(await cleanup.GET(new Request("http://localhost/api/maintenance/media-cleanup", {
+    headers: { authorization: "Bearer test-cron-secret" },
+  })));
+  assert.equal(result.status, 200);
+  assert.deepEqual(h.blobCalls, [], "untrusted URLs must never be sent to Blob deletion");
+  assert.equal((await h.db.zrange("media:cleanup", 0, -1)).length, 0);
+  assert.equal((await h.db.zrange("media:orphans", 0, -1)).length, 0);
+});
+
+test("media cleanup: retries deleted-message jobs and aged abandoned uploads", async () => {
+  h.reset();
+  const deletedUrl = "https://bucket.public.blob.vercel-storage.com/deleted.pdf";
+  const orphanUrl = "https://bucket.public.blob.vercel-storage.com/abandoned.pdf";
+  const cleanupRecord = JSON.stringify({ url: deletedUrl, queuedAt: Date.now() });
+  await h.db.zadd("media:cleanup", { score: Date.now(), member: cleanupRecord });
+  await h.db.zadd("media:orphans", { score: Date.now() - 8 * 24 * 60 * 60 * 1000, member: orphanUrl });
+
+  const result = await responseData(await cleanup.GET(new Request("http://localhost/api/maintenance/media-cleanup", {
+    headers: { authorization: "Bearer test-cron-secret" },
+  })));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.deleted, 2);
+  assert.deepEqual(h.blobCalls.sort(), [deletedUrl, orphanUrl].sort());
+  assert.equal(h.getZset("media:cleanup").length, 0);
+  assert.equal((await h.db.zrange("media:orphans", 0, -1)).length, 0);
+});

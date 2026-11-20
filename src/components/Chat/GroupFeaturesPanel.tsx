@@ -4,7 +4,9 @@ import { FC, FormEvent, useCallback, useEffect, useState } from "react"
 import axios from "axios"
 import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
-import { CalendarDays, Check, Loader2, Megaphone, X } from "lucide-react"
+import { CalendarDays, Check, Loader2, Megaphone, X, Users, ChevronLeft, ChevronRight } from "lucide-react"
+import { pusherClient } from "@/lib/pusher"
+import { toPusherKey } from "@/lib/utils"
 
 interface Props { isOpen: boolean; onClose: () => void; groupId: string; isAdmin: boolean }
 type FeatureData = { polls: any[]; events: any[]; announcements: any[] }
@@ -19,6 +21,10 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   const [eventTitle, setEventTitle] = useState("")
   const [eventDescription, setEventDescription] = useState("")
   const [eventDate, setEventDate] = useState("")
+  const [eventTimeOptions, setEventTimeOptions] = useState(["", ""])
+  const [eventSelections, setEventSelections] = useState<Record<string, string[]>>({})
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date())
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState<Date | null>(null)
   const [busy, setBusy] = useState(false)
   const [pollSelections, setPollSelections] = useState<Record<string, string[]>>({})
 
@@ -28,7 +34,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
     catch { toast.error("Unable to load group features") }
     finally { if (showLoading) setLoading(false) }
   }, [groupId])
-  useEffect(() => { if (isOpen) void load() }, [isOpen, load])
+  useEffect(() => { if (!isOpen) return; void load(); const channel = pusherClient.subscribe(toPusherKey("private-chat:group--" + groupId)); const refresh = () => { void load(false) }; channel.bind("group_feature_updated", refresh); return () => { channel.unbind("group_feature_updated", refresh) } }, [isOpen, load, groupId])
 
   const act = async (payload: any): Promise<boolean> => {
     if (busy) return false
@@ -60,11 +66,28 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
     const saved = await act({ action: "votePoll", pollId: poll.id, optionIds })
     if (saved) setPollSelections(prev => ({ ...prev, [poll.id]: optionIds }))
   }
+  const monthStart = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1)
+  const calendarStart = new Date(monthStart)
+  calendarStart.setDate(1 - monthStart.getDay())
+  const calendarDays = Array.from({ length: 42 }, (_, index) => {
+    const day = new Date(calendarStart)
+    day.setDate(calendarStart.getDate() + index)
+    return day
+  })
+  const visibleEvents = selectedCalendarDay
+    ? features.events.filter(event => {
+        const dates = [event.startsAt, ...(event.timeOptions || []).map((option: any) => option.startsAt)].map(value => new Date(value))
+        return dates.some(date => date.getFullYear() === selectedCalendarDay.getFullYear() && date.getMonth() === selectedCalendarDay.getMonth() && date.getDate() === selectedCalendarDay.getDate())
+      })
+    : features.events
+
   const createEvent = async (e: FormEvent) => {
     e.preventDefault()
     if (!eventDate) return
-    const saved = await act({ action: "createEvent", title: eventTitle, description: eventDescription, startsAt: new Date(eventDate).getTime() })
-    if (saved) { setEventTitle(""); setEventDescription(""); setEventDate("") }
+    const selectedTimes = eventTimeOptions.map(value => value ? new Date(value).getTime() : 0).filter(Boolean)
+    if (selectedTimes.length === 1) { toast.error("Add at least two time options, or clear both to create a fixed-time event."); return }
+    const saved = await act({ action: "createEvent", title: eventTitle, description: eventDescription, startsAt: new Date(eventDate).getTime(), ...(selectedTimes.length >= 2 ? { timeOptions: selectedTimes } : {}) })
+    if (saved) { setEventTitle(""); setEventDescription(""); setEventDate(""); setEventTimeOptions(["", ""]) }
   }
 
   return (
@@ -87,13 +110,20 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
               <form onSubmit={createEvent} className="space-y-2">
                 <input value={eventTitle} onChange={e=>setEventTitle(e.target.value)} placeholder="Event title" maxLength={120} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07]"/>
                 <input type="datetime-local" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07]"/>
+                <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-400/20 dark:bg-indigo-400/[0.06]"><p className="mb-2 text-xs font-semibold">Let the group choose a time</p><p className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">Add at least two alternatives to enable voting.</p>{eventTimeOptions.map((value,index)=><input key={index} type="datetime-local" value={value} onChange={e=>setEventTimeOptions(prev=>prev.map((item,i)=>i===index?e.target.value:item))} className="mb-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs dark:border-white/10 dark:bg-white/[0.04]"/>)}<button type="button" onClick={()=>setEventTimeOptions(prev=>prev.length<6?[...prev,""]:prev)} disabled={eventTimeOptions.length>=6} className="text-xs font-medium text-indigo-600 disabled:opacity-40">+ Add another time</button></div>
                 <textarea value={eventDescription} onChange={e=>setEventDescription(e.target.value)} placeholder="Details (optional)" rows={2} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07]"/>
                 <button disabled={busy || !eventTitle.trim() || !eventDate} className="rounded-xl bg-indigo-600 text-white px-3 py-2 text-xs font-semibold disabled:opacity-50">Create event</button>
               </form>
             </section>
             {isAdmin && <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]"><h3 className="font-semibold text-sm mb-2 flex gap-2 items-center"><Megaphone size={16}/> Post announcement</h3><textarea value={announcement} onChange={e=>setAnnouncement(e.target.value)} rows={2} maxLength={2000} placeholder="Write an announcement..." className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07]"/><button disabled={busy || !announcement.trim()} onClick={async()=>{const saved=await act({action:"announce",text:announcement});if(saved)setAnnouncement("")}} className="mt-2 rounded-xl bg-indigo-600 text-white px-3 py-2 text-xs font-semibold disabled:opacity-50">Publish</button></section>}
             <section><h3 className="font-semibold text-sm mb-2">Polls</h3>{features.polls.length===0?<p className="text-xs text-slate-500 dark:text-slate-400">No polls yet.</p>:features.polls.map(poll=>{const selected=pollSelections[poll.id]??poll.myOptionIds??[];return <div key={poll.id} className="rounded-xl border border-slate-200 bg-white p-3 mb-2 dark:border-white/10 dark:bg-white/[0.03]"><p className="text-sm font-medium mb-2">{poll.question}</p><div className="space-y-1">{poll.options.map((option:any)=><button type="button" key={option.id} disabled={busy || poll.closed} onClick={()=>togglePollOption(poll,option.id)} className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs text-left border ${selected.includes(option.id)?"bg-indigo-50 border-indigo-300 dark:bg-indigo-400/10 dark:border-indigo-400/40":"bg-white dark:bg-white/[0.04] border-transparent"}`}><span>{option.label}</span><span className="text-slate-500 dark:text-slate-400">{option.votes?.length||0} <Check size={12} className="inline"/></span></button>)}</div>{poll.multiple&&<button type="button" disabled={busy||selected.length===0||poll.closed} onClick={()=>submitPollVote(poll)} className="mt-2 rounded-xl bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold disabled:opacity-50">Submit selections</button>}</div>})}</section>
-            <section><h3 className="font-semibold text-sm mb-2">Events</h3>{features.events.length===0?<p className="text-xs text-slate-500 dark:text-slate-400">No upcoming events.</p>:features.events.map(event=><div key={event.id} className="rounded-xl border border-slate-200 bg-white p-3 mb-2 dark:border-white/10 dark:bg-white/[0.03]"><p className="text-sm font-medium">{event.title}</p><p className="text-xs text-slate-500 dark:text-slate-400">{new Date(event.startsAt).toLocaleString()}</p>{event.description&&<p className="text-xs mt-1">{event.description}</p>}<div className="flex gap-2 mt-2">{(["going","maybe","not-going"] as const).map(response=><button type="button" key={response} disabled={busy} onClick={()=>act({action:"respondEvent",eventId:event.id,response})} className="rounded-lg border border-slate-200 dark:border-white/10 px-2 py-1 text-[11px] capitalize transition hover:bg-slate-100 dark:hover:bg-white/10">{response.replace("-"," ")}</button>)}</div></div>)}</section>
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="mb-4 flex items-center justify-between"><div><p className="text-sm font-semibold">Group calendar</p><p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">A shared view of upcoming plans.</p></div><div className="flex items-center gap-1"><button type="button" aria-label="Previous month" onClick={()=>setCalendarMonth(new Date(calendarMonth.getFullYear(),calendarMonth.getMonth()-1,1))} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"><ChevronLeft size={16}/></button><span className="min-w-24 text-center text-xs font-semibold">{calendarMonth.toLocaleDateString(undefined,{month:"long",year:"numeric"})}</span><button type="button" aria-label="Next month" onClick={()=>setCalendarMonth(new Date(calendarMonth.getFullYear(),calendarMonth.getMonth()+1,1))} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"><ChevronRight size={16}/></button></div></div>
+              <div className="mb-1 grid grid-cols-7 gap-1">{["S","M","T","W","T","F","S"].map((day,index)=><span key={day+index} className="py-1 text-center text-[10px] font-semibold text-slate-400">{day}</span>)}</div>
+              <div className="grid grid-cols-7 gap-1">{calendarDays.map((day,index)=>{const inMonth=day.getMonth()===calendarMonth.getMonth();const hasEvent=features.events.some(event=>[event.startsAt,...(event.timeOptions||[]).map((option:any)=>option.startsAt)].some(value=>{const date=new Date(value);return date.getFullYear()===day.getFullYear()&&date.getMonth()===day.getMonth()&&date.getDate()===day.getDate()}));const selected=!!selectedCalendarDay&&selectedCalendarDay.toDateString()===day.toDateString();const today=day.toDateString()===new Date().toDateString();return <button type="button" key={index} onClick={()=>setSelectedCalendarDay(selected?null:day)} className={"relative flex h-9 flex-col items-center justify-center rounded-lg text-xs transition "+(selected?"bg-indigo-600 font-semibold text-white":today?"bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-400/15 dark:text-indigo-200":inMonth?"text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10":"text-slate-300 dark:text-slate-600")}><span>{day.getDate()}</span>{hasEvent&&<span className={"mt-0.5 h-1 w-1 rounded-full "+(selected?"bg-white":"bg-indigo-500")}/>}</button>})}</div>
+              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 dark:border-white/10"><p className="text-[11px] text-slate-500 dark:text-slate-400">{selectedCalendarDay?selectedCalendarDay.toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"}):"Select a day to filter events"}</p>{selectedCalendarDay&&<button type="button" onClick={()=>setSelectedCalendarDay(null)} className="text-[11px] font-medium text-indigo-600 dark:text-indigo-300">Show all events</button>}</div>
+            </section>
+            <section><h3 className="font-semibold text-sm mb-2">Events</h3>{visibleEvents.length===0?<p className="text-xs text-slate-500 dark:text-slate-400">No upcoming events.</p>:visibleEvents.map(event=><div key={event.id} className="rounded-xl border border-slate-200 bg-white p-3 mb-2 dark:border-white/10 dark:bg-white/[0.03]"><p className="text-sm font-medium">{event.title}</p><p className="text-xs text-slate-500 dark:text-slate-400">{new Date(event.startsAt).toLocaleString()}</p>{event.description&&<p className="text-xs mt-1">{event.description}</p>}{event.timeOptions?.length>0&&<div className="mt-3 rounded-xl bg-indigo-50/70 p-3 dark:bg-indigo-400/[0.06]"><p className="mb-2 text-xs font-semibold">Vote for a time</p>{event.timeOptions.map((option:any)=><label key={option.id} className="mb-2 flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs dark:border-white/10 dark:bg-white/[0.04]"><span className="flex items-center gap-2"><input type="checkbox" checked={(eventSelections[event.id]??event.myOptionIds??[]).includes(option.id)} onChange={e=>setEventSelections(prev=>{const current=prev[event.id]??event.myOptionIds??[];return {...prev,[event.id]:e.target.checked?[...current,option.id]:current.filter(id=>id!==option.id)}})}/>{new Date(option.startsAt).toLocaleString()}</span><span className="text-slate-500">{option.votes?.length||0} votes</span></label>)}<button type="button" disabled={busy||!(eventSelections[event.id]??event.myOptionIds??[]).length} onClick={()=>act({action:"voteEvent",eventId:event.id,optionIds:eventSelections[event.id]??event.myOptionIds??[]})} className="mt-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Submit vote</button></div>}<div className="flex gap-2 mt-2">{(["going","maybe","not-going"] as const).map(response=><button type="button" key={response} disabled={busy} onClick={()=>act({action:"respondEvent",eventId:event.id,response})} className={"rounded-lg border px-2 py-1 text-[11px] capitalize transition " + (event.myResponse===response ? "border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-400/50 dark:bg-indigo-400/10" : "border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10")}>{response.replace("-"," ")}</button>)}</div><p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400"><Users size={11} className="mr-1 inline"/>{event.responses?.going?.length||0} going · {event.responses?.maybe?.length||0} maybe · {event.responses?.["not-going"]?.length||0} not going</p></div>)}</section>
             <section><h3 className="font-semibold text-sm mb-2">Announcements</h3>{features.announcements.length===0?<p className="text-xs text-slate-500 dark:text-slate-400">No announcements yet.</p>:features.announcements.map(item=><div key={item.id} className="rounded-xl bg-amber-50 dark:bg-amber-950/20 p-3 mb-2"><p className="text-sm">{item.text}</p><p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">{new Date(item.createdAt).toLocaleString()}</p></div>)}</section>
           </div>}
         </Dialog.Panel>

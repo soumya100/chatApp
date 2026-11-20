@@ -16,7 +16,7 @@ function walk(directory) {
 test("the API route inventory is complete and every route exports an HTTP handler", () => {
   const apiRoot = path.join(root, "src/app/api");
   const routes = walk(apiRoot).filter(file => /route\.(ts|js)$/.test(file));
-  assert.equal(routes.length, 29, "update this inventory assertion when adding or removing API routes");
+  assert.equal(routes.length, 31, "update this inventory assertion when adding or removing API routes");
 
   for (const file of routes) {
     const source = fs.readFileSync(file, "utf8");
@@ -191,4 +191,65 @@ test("group activity refreshes without hiding the panel and disables duplicate e
   const source = read("src/components/Chat/GroupFeaturesPanel.tsx");
   assert.match(source, /await load\(false\)/);
   assert.match(source, /disabled=\{busy\} onClick=\{\(\)=>act\(\{action:"respondEvent"/);
+});
+
+
+test("Redis operations probe is secret-authenticated and exposes only aggregate queue metrics", () => {
+  const source = read("src/app/api/health/redis/route.ts");
+  assert.match(source, /authorization.*Bearer/);
+  assert.match(source, /db\.ping\(\)/);
+  assert.match(source, /chat:expiring/);
+  assert.match(source, /media:cleanup/);
+  assert.match(source, /media:orphans/);
+  assert.match(source, /Do not leak Redis URLs, tokens, commands or raw provider errors/);
+  assert.doesNotMatch(source, /UPSTASH_REDIS_REST_TOKEN|UPSTASH_REDIS_REST_URL/);
+});
+
+
+test("offline messaging persists requests in IndexedDB and replays them with stable idempotency IDs", () => {
+  const queue = read("src/lib/offline-message-queue.ts");
+  const chat = read("src/components/Chat/index.tsx");
+  assert.match(queue, /indexedDB\.open/);
+  assert.match(queue, /createObjectStore\(STORE_NAME, \{ keyPath: "id" \}\)/);
+  assert.match(queue, /createIndex\("chatId"/);
+  assert.match(queue, /MAX_QUEUED_MESSAGES_PER_CHAT = 200/);
+  assert.match(queue, /export async function enqueueOfflineMessage/);
+  assert.match(queue, /export async function listOfflineMessages/);
+  assert.match(queue, /export async function removeOfflineMessage/);
+  assert.match(chat, /addEventListener\('online'/);
+  assert.match(chat, /addEventListener\('focus'/);
+  assert.match(chat, /addEventListener\('visibilitychange'/);
+  assert.match(chat, /listOfflineMessages\(chatId\)/);
+  assert.match(chat, /requestId: tempId/);
+  assert.match(chat, /status: 'queued'/);
+  assert.match(chat, /removeOfflineMessage\(record\.id\)/);
+});
+
+test("upload endpoint applies a per-user quota before minting Blob upload tokens", () => {
+  const source = read("src/app/api/upload/route.ts");
+  assert.match(source, /rateLimit\(session\.user\.id, "blob_upload", \{ limit: 10, windowSeconds: 60 \* 60 \}\)/);
+  assert.match(source, /UPLOAD_RATE_LIMITED/);
+  assert.match(source, /status: message === "Unauthorized" \? 401 : message === "UPLOAD_RATE_LIMITED" \? 429 : 400/);
+});
+
+test("rate limiting is performed in a single Redis Lua transaction", () => {
+  const source = read("src/lib/ratelimit.ts");
+  assert.match(source, /sliding-window-rate-limit-v1/);
+  assert.match(source, /ZREMRANGEBYSCORE/);
+  assert.match(source, /ZADD/);
+  assert.match(source, /ZCARD/);
+  assert.match(source, /db\.eval\(/);
+  assert.doesNotMatch(source, /db\.pipeline\(/);
+});
+
+
+test("chat search uses debounced server-side history results and cancels stale requests", () => {
+  const chat = read("src/components/Chat/index.tsx");
+  const search = read("src/app/api/message/search/route.ts");
+  assert.match(chat, /api\/message\/search\?chatId=/);
+  assert.match(chat, /window\.setTimeout/);
+  assert.match(chat, /controller\.abort\(\)/);
+  assert.match(chat, /results\.forEach\(message => merged\.set/);
+  assert.match(search, /zrange\(\`chat:\$\{chatId\}:messages\`, -500, -1\)/);
+  assert.match(search, /results\.slice\(0, 50\)/);
 });

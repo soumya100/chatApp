@@ -1,7 +1,10 @@
 import { authOptions } from "@/lib/auth"
+import { hasCurrentChatAccess } from "@/lib/chat-access"
 import { db } from "@/lib/db"
 import { groupPreferencesKey, parseStoredGroupPreferences } from "@/lib/group-preferences"
 import { messageValidator } from "@/lib/validations/message"
+import { pusherServer } from "@/lib/pusher"
+import { toPusherKey } from "@/lib/utils"
 import { getServerSession } from "next-auth"
 import { z } from "zod"
 
@@ -22,18 +25,24 @@ export async function GET(req: Request) {
         const params = Object.fromEntries(url.searchParams.entries())
         const { chatId, cursor, limit } = historyQueryValidator.parse(params)
 
-        if (chatId.startsWith("group--")) {
-            const groupId = chatId.slice("group--".length)
-            const isMember = await db.sismember(`group:${groupId}:members`, session.user.id)
-            if (!isMember) return new Response("Forbidden", { status: 403 })
-        } else {
-            const ids = chatId.split("--")
-            if (ids.length !== 2 || !ids.includes(session.user.id)) {
-                return new Response("Forbidden", { status: 403 })
+        if (!(await hasCurrentChatAccess(db, chatId, session.user.id))) return new Response("Forbidden", { status: 403 })
+
+        // A message and its outbox event are persisted atomically. If the
+        // original Pusher publish failed, any authorized history reconnect
+        // retries pending chat events and acknowledges only successful sends.
+        const deliveryKey = `chat:${chatId}:delivery:outbox`
+        const pendingDeliveries = await db.zrange(deliveryKey, 0, 19) as unknown[]
+        for (const raw of pendingDeliveries) {
+            const serialized = typeof raw === "string" ? raw : JSON.stringify(raw)
+            try {
+                const delivery = JSON.parse(serialized) as { event: string; payload: unknown }
+                if (delivery.event !== "incoming-message" || !delivery.payload) continue
+                await pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), delivery.event, delivery.payload)
+                await db.zrem(deliveryKey, serialized)
+            } catch (deliveryError) {
+                // Keep failed events in Redis; the next reconnect/history fetch retries.
+                console.error("[message/history] Pending realtime delivery retained for retry:", deliveryError)
             }
-            const friendId = ids[0] === session.user.id ? ids[1] : ids[0]
-            const isFriend = await db.sismember(`user:${session.user.id}:friends`, friendId)
-            if (!isFriend) return new Response("Forbidden", { status: 403 })
         }
 
         let rawMessages: unknown[] = []

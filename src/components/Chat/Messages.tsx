@@ -399,14 +399,46 @@ const Messages: FC<MessagesProps> = ({
     const channelKey = toPusherKey(`private-chat:${chatId}`)
     const channel = pusherClient.subscribe(channelKey)
 
+    // Reconcile durable history whenever the realtime connection returns.
+    // This recovers messages persisted while the browser was offline or while
+    // the Pusher event delivery failed.
+    const syncLatestMessages = async () => {
+      try {
+        const response = await axios.get<{ messages: Message[]; hasMore: boolean }>(
+          '/api/message/history',
+          { params: { chatId, limit: 50 } }
+        )
+        const serverMessages = response.data.messages || []
+        setMessages(previous => {
+          const merged = new Map(previous.map(message => [message.id, message]))
+          serverMessages.forEach(serverMessage => {
+            if (serverMessage.clientRequestId) {
+              for (const [existingId, existingMessage] of merged) {
+                if (existingMessage.clientRequestId === serverMessage.clientRequestId) merged.delete(existingId)
+              }
+            }
+            merged.set(serverMessage.id, { ...serverMessage, status: 'sent' })
+          })
+          return Array.from(merged.values()).sort((left, right) => right.timestamp - left.timestamp)
+        })
+        setHasMore(response.data.hasMore)
+      } catch {
+        // A transient history failure should not disturb the currently visible chat.
+      }
+    }
+
+    const connectionStateHandler = ({ current, previous }: { current: string; previous: string }) => {
+      if (current === 'connected' && previous !== 'connected') void syncLatestMessages()
+    }
+    pusherClient.connection.bind('state_change', connectionStateHandler)
+
     // New incoming message
     const messageHandler = (incoming: Message) => {
       setMessages((prev) => {
         // De-duplicate if this is our own message optimistically sent
         const existingIdx = prev.findIndex(
-          (m) =>
-            m.id === incoming.id ||
-            (m.status === 'sending' && m.senderId === incoming.senderId && m.text === incoming.text)
+          (message) => message.id === incoming.id ||
+            (Boolean(message.clientRequestId) && message.clientRequestId === incoming.clientRequestId)
         )
         if (existingIdx !== -1) {
           const next = [...prev]
@@ -480,6 +512,7 @@ const Messages: FC<MessagesProps> = ({
     channel.bind('message_pin_updated', pinHandler)
 
     return () => {
+      pusherClient.connection.unbind('state_change', connectionStateHandler)
       pusherClient.unsubscribe(channelKey)
       channel.unbind('incoming-message', messageHandler)
       channel.unbind('message_edited', editHandler)
@@ -1000,7 +1033,9 @@ const Messages: FC<MessagesProps> = ({
                           {/* Optimistic Status / Checkmarks for Sent Messages */}
                           {isCurrentUser && !message.isDeleted && (
                             <span className='inline-flex items-center ml-1.5 align-middle select-none'>
-                              {message.status === 'sending' ? (
+                              {message.status === 'queued' ? (
+                                <span title='Saved on this device; waiting for a connection' className='text-[10px] opacity-80'>Queued</span>
+                              ) : message.status === 'sending' ? (
                                 <span title='Sending...'>
                                   <Loader2 className='w-3 h-3 animate-spin text-indigo-200' />
                                 </span>
@@ -1041,7 +1076,9 @@ const Messages: FC<MessagesProps> = ({
                           <span>{formatTimeStamp(message.timestamp)}</span>
                           {isCurrentUser && (
                             <span className='inline-flex items-center ml-0.5'>
-                              {message.status === 'sending' ? (
+                              {message.status === 'queued' ? (
+                                <span title='Saved on this device; waiting for a connection' className='text-[10px] opacity-80'>Queued</span>
+                              ) : message.status === 'sending' ? (
                                 <Loader2 className='w-3 h-3 animate-spin text-indigo-200' />
                               ) : message.status === 'error' ? (
                                 <button

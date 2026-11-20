@@ -31,6 +31,9 @@ async function main() {
     ["group management", "/api/group/smoke-group/manage", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "leave" }) }],
     ["group activity read", "/api/group/smoke-group/features", { method: "GET" }],
     ["group activity write", "/api/group/smoke-group/features", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "announce", text: "smoke" }) }],
+    ["event creation auth boundary", "/api/group/smoke-group/features", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "createEvent", title: "Smoke event", startsAt: Date.now() + 60000, timeOptions: [Date.now() + 120000, Date.now() + 180000] }) }],
+    ["event time vote auth boundary", "/api/group/smoke-group/features", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "voteEvent", eventId: "smoke-event", optionIds: ["smoke-slot"] }) }],
+    ["event RSVP auth boundary", "/api/group/smoke-group/features", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "respondEvent", eventId: "smoke-event", response: "going" }) }],
     ["pinned message read", "/api/group/smoke-group/pin", { method: "GET" }],
     ["pinned message write", "/api/group/smoke-group/pin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messageId: "smoke", pinned: true }) }],
     ["group preference read", "/api/user/group-preferences?groupId=smoke-group", { method: "GET" }],
@@ -64,7 +67,7 @@ async function main() {
     await check(name, path, options, 401);
   }
 
-  console.log(`Smoke checks passed: 4 public/auth checks, 1 middleware redirect, ${protectedRequests.length} protected API checks.`);
+  console.log(`Smoke checks passed: 4 public/auth checks, 1 middleware redirect, ${protectedRequests.length} protected API checks (including event creation, voting and RSVP).`);
 }
 
 main().catch(error => {

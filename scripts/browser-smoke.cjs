@@ -201,6 +201,16 @@ async function exerciseBrowser(name, browserType) {
     const signupWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     assert.ok(signupWidth <= 391, `${name}: signup page overflows mobile viewport: ${signupWidth}px`);
 
+    // Exercise narrow phones and tablet width as well as the default mobile
+    // viewport; horizontal overflow is a frequent accessibility failure.
+    for (const width of [320, 768]) {
+      await page.setViewportSize({ width, height: width < 400 ? 740 : 1024 });
+      await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
+      await page.getByRole("heading", { name: /welcome to chat\+/i }).waitFor();
+      const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      assert.ok(documentWidth <= width, `${name}: login page overflows ${width}px viewport: ${documentWidth}px`);
+    }
+
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
     const desktopHeading = page.getByRole("heading", { name: /welcome to chat\+/i });

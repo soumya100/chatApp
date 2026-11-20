@@ -56,9 +56,85 @@ test("message send: direct happy path persists first, then broadcasts and counts
   assert.equal(stored[0].senderId, "owner");
   assert.equal(stored[0].receiverId, "member");
   assert.equal(stored[0].senderName, "Owner");
+  assert.equal(typeof stored[0].clientRequestId, "string", "server-generated IDs preserve compatibility with older clients");
   assert.deepEqual(h.getHash("user:member:unread"), { [DIRECT]: 1 });
   assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 0, "failed broadcast must not be recorded as delivered");
+  assert.equal(h.getZset(`chat:${DIRECT}:delivery:outbox`).length, 1, "failed delivery must remain in the durable outbox");
   assert.deepEqual(h.getHash("user:owner:unread"), {});
+});
+
+test("message send: retries with the same requestId persist and count a direct message once", async () => {
+  h.reset();
+  seedDirectFriendship();
+  const payload = { chatId: DIRECT, text: "retry-safe", requestId: "request-direct-0001" };
+  const first = await status(await send.POST(h.request(payload)));
+  const retry = await status(await send.POST(h.request(payload)));
+  assert.equal(first.status, 200);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.data.id, first.data.id, "a retry returns the original server message");
+  assert.equal(first.data.clientRequestId, payload.requestId);
+  assert.equal(h.getDirectMessages().length, 1);
+  assert.deepEqual(h.getHash("user:member:unread"), { [DIRECT]: 1 });
+  assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 1);
+});
+
+test("message send: reusing a requestId with a different payload returns 409", async () => {
+  h.reset();
+  seedDirectFriendship();
+  const original = { chatId: DIRECT, text: "original payload", requestId: "request-payload-collision-01" };
+  assert.equal((await status(await send.POST(h.request(original)))).status, 200);
+  const collision = await status(await send.POST(h.request({ ...original, text: "changed payload" })));
+  assert.equal(collision.status, 409);
+  assert.equal(h.getDirectMessages().length, 1);
+  assert.equal(h.getDirectMessages()[0].text, "original payload");
+});
+
+test("message send: retries with the same requestId do not duplicate group unread counts", async () => {
+  h.reset();
+  seedGroupChat();
+  const payload = { chatId: GROUP_CHAT, text: "group retry-safe", requestId: "request-group-0001" };
+  const first = await status(await send.POST(h.request(payload)));
+  const retry = await status(await send.POST(h.request(payload)));
+  assert.equal(first.status, 200);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.data.id, first.data.id);
+  assert.equal(h.getMessages().length, 1);
+  assert.deepEqual(h.getHash("user:admin:unread"), { [GROUP_CHAT]: 1 });
+  assert.deepEqual(h.getHash("user:member:unread"), { [GROUP_CHAT]: 1 });
+  assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 1);
+});
+
+test("message send: idempotent retries still require current chat authorization", async () => {
+  h.reset();
+  seedDirectFriendship();
+  const directPayload = { chatId: DIRECT, text: "authorized once", requestId: "request-auth-direct-01" };
+  assert.equal((await status(await send.POST(h.request(directPayload)))).status, 200);
+  h.seedSet("user:owner:friends", []);
+  assert.equal((await status(await send.POST(h.request(directPayload)))).status, 401);
+
+  h.reset();
+  seedGroupChat();
+  h.setSession("member");
+  const groupPayload = { chatId: GROUP_CHAT, text: "member once", requestId: "request-auth-group-01" };
+  assert.equal((await status(await send.POST(h.request(groupPayload)))).status, 200);
+  h.seedSet("group:g1:members", ["owner", "admin"]);
+  assert.equal((await status(await send.POST(h.request(groupPayload)))).status, 403);
+});
+
+test("message send: a completed retry does not consume the new-message rate limit", async () => {
+  h.reset();
+  seedDirectFriendship();
+  const original = { chatId: DIRECT, text: "original", requestId: "request-rate-limit-01" };
+  const first = await status(await send.POST(h.request(original)));
+  assert.equal(first.status, 200);
+  for (let index = 0; index < 14; index += 1) {
+    const sent = await status(await send.POST(h.request({ chatId: DIRECT, text: `new ${index}`, requestId: `request-rate-${index}-0001` })));
+    assert.equal(sent.status, 200);
+  }
+  const retry = await status(await send.POST(h.request(original)));
+  assert.equal(retry.status, 200);
+  assert.equal(retry.data.id, first.data.id);
+  assert.equal(h.getDirectMessages().length, 15);
 });
 
 test("message send: media-only messages are accepted and broadcast to the friend", async () => {
@@ -160,6 +236,19 @@ test("message send: sliding-window rate limit rejects the 16th message within 10
   assert.equal(h.getDirectMessages().length, 15, "the rejected message must not be persisted");
 });
 
+
+test("message send: concurrent bursts cannot race past the atomic sliding-window limit", async () => {
+  h.reset();
+  seedDirectFriendship();
+  const attempts = await Promise.all(Array.from({ length: 30 }, (_, index) =>
+    send.POST(h.request({ chatId: DIRECT, text: `parallel ${index}`, requestId: `parallel-rate-${index}-0001` }))
+  ));
+  const statuses = await Promise.all(attempts.map(response => response.status));
+  assert.equal(statuses.filter(value => value === 200).length, 15);
+  assert.equal(statuses.filter(value => value === 429).length, 15);
+  assert.equal(h.getDirectMessages().length, 15);
+});
+
 // --------------------------------------------------------------- message edit
 test("message edit: authorization boundary (unauthenticated, non-member, non-sender)", async () => {
   h.reset({ session: null });
@@ -176,6 +265,7 @@ test("message edit: authorization boundary (unauthenticated, non-member, non-sen
 
 test("message edit: sender can edit and the edit is broadcast", async () => {
   h.reset();
+  seedDirectFriendship();
   const chatId = h.setDirectMessages([{ id: "m1", senderId: "owner", text: "hello", timestamp: 1 }]);
   const result = await status(await edit.POST(h.request({ messageId: "m1", chatId, newText: "hello edited" })));
   assert.equal(result.status, 200);
@@ -189,6 +279,7 @@ test("message edit: sender can edit and the edit is broadcast", async () => {
 
 test("message edit: system, deleted, unknown and empty-text edge cases", async () => {
   h.reset();
+  seedDirectFriendship();
   h.setDirectMessages([
     { id: "sys", senderId: "system", text: "sys", timestamp: 1 },
     { id: "gone", senderId: "owner", text: "old", timestamp: 2, isDeleted: true },
@@ -235,6 +326,7 @@ test("message delete: only the sender can delete (IDOR protected)", async () => 
 
 test("message delete: sender soft-deletes, owned attachments are removed from Blob", async () => {
   h.reset();
+  seedDirectFriendship();
   const blobUrl = "https://bucket.public.blob.vercel-storage.com/file-abc.pdf";
   const chatId = h.setDirectMessages([
     { id: "m1", senderId: "owner", text: "doc", timestamp: 1, mediaUrl: blobUrl, mediaType: "file", fileName: "f.pdf", fileSize: 9, senderImg: "/owner.png" },
@@ -255,20 +347,24 @@ test("message delete: sender soft-deletes, owned attachments are removed from Bl
 
 test("message delete: external attachments and blob outages are handled safely", async () => {
   h.reset();
+  seedDirectFriendship();
   const chatId = h.setDirectMessages([{ id: "m2", senderId: "owner", text: "external", timestamp: 3, mediaUrl: "https://evil.example.com/a.png" }]);
   const result = await status(await remove.POST(h.request({ messageId: "m2", chatId })));
   assert.equal(result.status, 200);
   assert.deepEqual(h.blobCalls, [], "third-party URLs must not be sent to Blob deletion");
   h.reset();
+  seedDirectFriendship();
   h.setDirectMessages([{ id: "m3", senderId: "owner", text: "x", timestamp: 4, mediaUrl: "https://bucket.public.blob.vercel-storage.com/b.png" }]);
   h.setBlobFailure(true);
   const failing = await status(await remove.POST(h.request({ messageId: "m3", chatId: DIRECT })));
-  assert.equal(failing.status, 502);
-  assert.equal(h.getDirectMessages()[0].isDeleted, undefined, "message must survive when its attachment cannot be deleted");
+  assert.equal(failing.status, 200, "message deletion succeeds while failed Blob cleanup remains queued");
+  assert.equal(h.getDirectMessages()[0].isDeleted, true, "the message is tombstoned before external cleanup");
+  assert.equal(h.getZset("media:cleanup").length, 1, "failed Blob deletion remains durably retryable");
 });
 
 test("message delete: system, already-deleted and unknown messages are rejected", async () => {
   h.reset();
+  seedDirectFriendship();
   h.setDirectMessages([
     { id: "sys", senderId: "system", text: "sys", timestamp: 1 },
     { id: "gone", senderId: "owner", text: "old", timestamp: 2, isDeleted: true },
@@ -360,12 +456,14 @@ test("message read: membership, receipts opt-out and validation", async () => {
   h.setSession("outsider");
   assert.equal((await status(await read.POST(h.request({ chatId: GROUP_CHAT })))).status, 403);
   h.setSession("owner");
-  // Read receipts only require chat participation, not friendship (current contract).
-  assert.equal((await status(await read.POST(h.request({ chatId: "owner--stranger" })))).status, 200);
+  // A former friend must not retain read-receipt access after removal.
+  assert.equal((await status(await read.POST(h.request({ chatId: "owner--stranger" })))).status, 403);
   h.reset({ session: null });
   assert.equal((await status(await read.POST(h.request({ chatId: DIRECT })))).status, 401);
   h.reset();
   assert.equal((await status(await read.POST(h.request({ nope: 1 })))).status, 422);
+  assert.equal((await status(await read.POST(h.requestRaw("{invalid")))).status, 400, "malformed JSON must be a client error, not an internal server error");
+  assert.equal((await status(await read.POST(h.request({ chatId: "x".repeat(257) })))).status, 422, "oversized chat identifiers must be rejected");
 });
 
 // ----------------------------------------------------------- message history
@@ -399,6 +497,21 @@ test("message history: latest page, ordering and cursor contract", async () => {
   assert.deepEqual(last.data.messages.map(message => message.id), ["m1"]);
   assert.equal(last.data.hasMore, false);
   assert.equal(last.data.nextCursor, 1000);
+});
+
+test("message history: reconnect retries pending Pusher delivery and acknowledges it", async () => {
+  h.reset();
+  seedDirectFriendship();
+  h.setPusherFailure(true);
+  const sent = await status(await send.POST(h.request({ chatId: DIRECT, text: "deliver after reconnect", requestId: "request-outbox-retry-01" })));
+  assert.equal(sent.status, 200);
+  const key = `chat:${DIRECT}:delivery:outbox`;
+  assert.equal(h.getZset(key).length, 1);
+  h.setPusherFailure(false);
+  const historyPage = await status(await history.GET(h.request(undefined, "GET", `http://localhost/api/message/history?chatId=${DIRECT}&limit=10`)));
+  assert.equal(historyPage.status, 200);
+  assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 1);
+  assert.equal(h.getZset(key).length, 0, "successful retry acknowledges the outbox item");
 });
 
 test("message history: expired messages are hidden but pagination still advances", async () => {
@@ -459,6 +572,7 @@ test("message history: authorization and query validation", async () => {
 // ------------------------------------------------------------ message search
 test("message search: case-insensitive match excluding deleted messages", async () => {
   h.reset();
+  seedDirectFriendship();
   const chatId = h.setDirectMessages([
     { id: "m1", senderId: "owner", text: "Hello World", timestamp: 1, receiverId: "member" },
     { id: "m2", senderId: "member", text: "say HELLO again", timestamp: 2, receiverId: "owner" },
@@ -489,6 +603,7 @@ test("message search: authorization and bounds", async () => {
 // ------------------------------------------------------------ message typing
 test("message typing: participants broadcast, strangers are rejected", async () => {
   h.reset();
+  seedDirectFriendship();
   const ok = await status(await typing.POST(h.request({ chatId: DIRECT, isTyping: true })));
   assert.equal(ok.status, 200);
   const event = h.pusherEvents.find(item => item.event === "user_typing");
@@ -496,16 +611,46 @@ test("message typing: participants broadcast, strangers are rejected", async () 
   const stop = await status(await typing.POST(h.request({ chatId: DIRECT, isTyping: false })));
   assert.equal(stop.status, 200);
   h.setSession("outsider");
-  assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT })))).status, 401);
+  assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT })))).status, 403);
   h.reset({ session: null });
   assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT })))).status, 401);
   h.reset();
-  assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT, isTyping: "yes" })))).status, 400);
+  assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT, isTyping: "yes" })))).status, 422);
 });
 
-test("message typing: group chat ids are currently rejected (existing behavior)", async () => {
+test("message typing: group members can broadcast typing state to the group channel", async () => {
   h.reset();
-  // The typing route only understands direct `a--b` chat ids today; group typing
-  // is handled client-side. This pins the current contract.
-  assert.equal((await status(await typing.POST(h.request({ chatId: GROUP_CHAT })))).status, 401);
+  seedGroupChat();
+  const response = await status(await typing.POST(h.request({ chatId: GROUP_CHAT, isTyping: true })));
+  assert.equal(response.status, 200);
+  const event = h.pusherEvents.find(item => item.event === "user_typing");
+  assert.equal(event.channel, `private-chat:${GROUP_CHAT}`);
+  assert.deepEqual(event.payload, { userId: "owner", isTyping: true });
+});
+
+test("message typing: non-members and removed direct-chat friends are rejected", async () => {
+  h.reset();
+  seedGroupChat();
+  h.setSession("outsider");
+  assert.equal((await status(await typing.POST(h.request({ chatId: GROUP_CHAT })))).status, 403);
+
+  h.reset();
+  h.seedSet("user:owner:friends", []);
+  assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT })))).status, 403);
+});
+
+test("message typing: malformed JSON and invalid chat identifiers fail safely", async () => {
+  h.reset();
+  assert.equal((await status(await typing.POST(h.requestRaw("{invalid")))).status, 400);
+  assert.equal((await status(await typing.POST(h.request({ chatId: "" })))).status, 422);
+});
+
+test("message read: realtime provider failure does not undo the durable read", async () => {
+  h.reset();
+  seedDirectFriendship();
+  h.seedHash("user:owner:unread", { [DIRECT]: 2 });
+  h.setPusherFailure(true);
+  const result = await status(await read.POST(h.request({ chatId: DIRECT })));
+  assert.equal(result.status, 200);
+  assert.deepEqual(h.getHash("user:owner:unread"), {});
 });

@@ -1,4 +1,5 @@
 import { authOptions } from "@/lib/auth"
+import { hasCurrentChatAccess } from "@/lib/chat-access"
 import { db } from "@/lib/db"
 import { resolveAdminIds } from "@/lib/group"
 import { pusherServer } from "@/lib/pusher"
@@ -55,7 +56,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
     const rawGroup = await db.get(`group:${groupId}`)
     if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
     const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
-    if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
+    if (!(await hasCurrentChatAccess(db, `group--${groupId}`, userId))) return Response.json({ message: "Not a group member" }, { status: 403 })
     const isAdmin = resolveAdminIds(group).includes(userId)
     if (group.settings?.onlyAdminsCanPinMessages && !isAdmin) return Response.json({ message: "Only admins can pin messages" }, { status: 403 })
 
@@ -82,7 +83,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
     const rawGroup = await db.get(`group:${groupId}`)
     if (!rawGroup) return Response.json({ message: "Group not found" }, { status: 404 })
     const group = (typeof rawGroup === "string" ? JSON.parse(rawGroup) : rawGroup) as Group
-    if (!(group.memberIds || []).includes(userId)) return Response.json({ message: "Not a group member" }, { status: 403 })
+    if (!(await hasCurrentChatAccess(db, `group--${groupId}`, userId))) return Response.json({ message: "Not a group member" }, { status: 403 })
     const rows = await db.zrange(`chat:group--${groupId}:messages`, 0, -1) as unknown[]
     const messages: Message[] = []
     for (const row of rows) {

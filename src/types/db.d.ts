@@ -9,6 +9,7 @@ interface User {
 
 interface Message {
     id: string,
+    clientRequestId?: string,
     senderId: string,
     receiverId: string,
     text: string,
@@ -21,7 +22,7 @@ interface Message {
     fileName?: string,
     fileSize?: number,
     duration?: number,
-    status?: 'sending' | 'sent' | 'error',
+    status?: 'sending' | 'queued' | 'sent' | 'error',
     isSeen?: boolean,
     seenAt?: number,
     senderName?: string,

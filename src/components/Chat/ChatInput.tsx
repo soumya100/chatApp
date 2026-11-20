@@ -4,6 +4,7 @@ import { Button } from '@/common'
 import { useAudioRecorder, useVideoNoteRecorder } from '@/hooks'
 import { uploadMedia } from '@/lib/mediaUpload'
 import axios from 'axios'
+import { nanoid } from 'nanoid'
 import {
   FileIcon,
   Film,
@@ -31,7 +32,7 @@ import TextareaAutosize from 'react-textarea-autosize'
 interface ChatInputProps {
   chatPartner: string
   chatId: string
-  onSendMessage?: (text: string, mediaPayload?: any) => Promise<void>
+  onSendMessage?: (text: string, mediaPayload?: any, requestId?: string) => Promise<void>
   replyingTo?: Message | null
   onCancelReply?: () => void
 }
@@ -40,6 +41,14 @@ interface PendingAttachment {
   file: File
   previewUrl: string
   fileType: 'image' | 'video' | 'audio' | 'file'
+  // Keep a completed upload URL across a failed message-send attempt so retry
+  // does not upload the same bytes again and create orphaned Blob objects.
+  uploaded?: {
+    url: string
+    mediaType: 'image' | 'video' | 'video-note' | 'audio' | 'file'
+    fileName: string
+    fileSize: number
+  }
 }
 
 const ChatInput: FC<ChatInputProps> = ({
@@ -53,11 +62,13 @@ const ChatInput: FC<ChatInputProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [input, setInput] = useState<string>('')
   const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null)
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null)
   const lastTypingSignal = useRef<number>(0)
 
   // Focus textarea when replyingTo changes
   useEffect(() => {
+    setPendingRequestId(null)
     if (replyingTo) {
       textAreaRef.current?.focus()
     }
@@ -129,6 +140,7 @@ const ChatInput: FC<ChatInputProps> = ({
   })
 
   const handleInputChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    if (pendingRequestId) setPendingRequestId(null)
     setInput(e.target.value)
 
     const now = Date.now()
@@ -153,6 +165,7 @@ const ChatInput: FC<ChatInputProps> = ({
     else if (mimeType.startsWith('video/')) fileType = 'video'
     else if (mimeType.startsWith('audio/')) fileType = 'audio'
 
+    if (pendingRequestId) setPendingRequestId(null)
     const previewUrl = URL.createObjectURL(file)
 
     setAttachment({
@@ -167,6 +180,7 @@ const ChatInput: FC<ChatInputProps> = ({
       URL.revokeObjectURL(attachment.previewUrl)
     }
     setAttachment(null)
+    setPendingRequestId(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -178,6 +192,8 @@ const ChatInput: FC<ChatInputProps> = ({
     if ((!trimmed && !attachment) || isLoading) return
 
     setIsLoading(true)
+    const requestId = pendingRequestId || nanoid()
+    setPendingRequestId(requestId)
     axios.post('/api/message/typing', { chatId, isTyping: false }).catch(() => {})
 
     try {
@@ -202,12 +218,14 @@ const ChatInput: FC<ChatInputProps> = ({
           text: replyingTo.text,
           mediaType: replyingTo.mediaType,
         }
-        onCancelReply?.()
       }
 
       // Upload attachment if present via decoupled upload helper
       if (attachment) {
-        const uploadRes = await uploadMedia(attachment.file)
+        const uploadRes = attachment.uploaded || await uploadMedia(attachment.file)
+        if (!attachment.uploaded) {
+          setAttachment(previous => previous ? { ...previous, uploaded: uploadRes } : previous)
+        }
         mediaPayload = {
           mediaUrl: uploadRes.url,
           mediaType: uploadRes.mediaType,
@@ -216,20 +234,25 @@ const ChatInput: FC<ChatInputProps> = ({
         }
       }
 
-      // Clear input and attachment immediately for optimistic UX
-      setInput('')
-      removeAttachment()
-      textAreaRef.current?.focus()
-
+      // Keep the draft and attachment until the server confirms acceptance.
+      // Clearing before the request succeeds loses messages on offline/network/API
+      // failures and makes safe manual retry impossible.
       if (onSendMessage) {
-        await onSendMessage(trimmed, mediaPayload)
+        await onSendMessage(trimmed, mediaPayload, requestId)
       } else {
         await axios.post('/api/message/send', {
           text: trimmed,
           chatId,
           ...mediaPayload,
+          requestId,
         })
       }
+
+      setInput('')
+      setPendingRequestId(null)
+      removeAttachment()
+      if (replyingTo) onCancelReply?.()
+      textAreaRef.current?.focus()
     } catch (error: any) {
       toast.error(error?.response?.data || error?.message || 'Something went wrong. Please try later')
     } finally {
@@ -240,6 +263,7 @@ const ChatInput: FC<ChatInputProps> = ({
   const enterPress = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Escape' && replyingTo) {
       e.preventDefault()
+      setPendingRequestId(null)
       onCancelReply?.()
       return
     }
@@ -250,7 +274,9 @@ const ChatInput: FC<ChatInputProps> = ({
   }
 
   return (
-    <div className='border-t border-gray-200 dark:border-zinc-800 px-4 pt-3 mb-2 sm:mb-0'>
+    <div className='border-t border-gray-200 dark:border-zinc-800 px-4 pt-3 mb-2 sm:mb-0' aria-busy={isLoading}>
+      {isLoading && <p role='status' aria-live='polite' className='mb-2 text-xs text-indigo-600 dark:text-indigo-400'>Sending message… Your draft will remain here if sending fails.</p>}
+
       {/* Pending attachment preview */}
       {attachment && (
         <div className='mb-2 flex items-center gap-3 p-2 rounded-lg bg-gray-50 dark:bg-zinc-800/80 border border-gray-200 dark:border-zinc-700 w-fit max-w-sm'>
@@ -311,7 +337,7 @@ const ChatInput: FC<ChatInputProps> = ({
           </div>
           <button
             type='button'
-            onClick={onCancelReply}
+            onClick={() => { setPendingRequestId(null); onCancelReply?.() }}
             className='p-1 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 shrink-0'
             title='Cancel reply (Esc)'
             aria-label='Cancel reply'
@@ -372,6 +398,7 @@ const ChatInput: FC<ChatInputProps> = ({
             rows={1}
             value={input}
             onChange={handleInputChange}
+            disabled={isLoading}
             placeholder={`Message ${chatPartner}...`}
             aria-label={`Message ${chatPartner}`}
             className='block w-full h-full resize-none border-0 bg-transparent text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:ring-0 sm:py-2 sm:leading-6 sm:text-sm pl-3 pr-32'
@@ -389,6 +416,7 @@ const ChatInput: FC<ChatInputProps> = ({
               type='file'
               ref={fileInputRef}
               onChange={handleFileSelect}
+              disabled={isLoading}
               className='hidden'
               accept='image/png,image/jpeg,image/gif,image/webp,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip'
               aria-label='Upload attachment'
@@ -398,6 +426,7 @@ const ChatInput: FC<ChatInputProps> = ({
             <button
               type='button'
               onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading}
               className='p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors'
               title='Attach image, video, audio or document'
               aria-label='Attach file, image or document'
@@ -409,6 +438,7 @@ const ChatInput: FC<ChatInputProps> = ({
             <button
               type='button'
               onClick={videoNoteRecorder.openModal}
+              disabled={isLoading}
               className='p-1.5 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors'
               title='Record circular video message'
               aria-label='Record video message'
@@ -420,6 +450,7 @@ const ChatInput: FC<ChatInputProps> = ({
             <button
               type='button'
               onClick={audioRecorder.startRecording}
+              disabled={isLoading}
               className='p-1.5 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors'
               title='Record voice note'
               aria-label='Record voice message'

@@ -1,7 +1,9 @@
 import { authOptions } from "@/lib/auth"
+import { hasCurrentChatAccess } from "@/lib/chat-access"
 import { db } from "@/lib/db"
 import { messageValidator } from "@/lib/validations/message"
 import { getServerSession } from "next-auth"
+import { rateLimit } from "@/lib/ratelimit"
 import { z } from "zod"
 
 const searchQueryValidator = z.object({
@@ -20,21 +22,13 @@ export async function GET(req: Request) {
         const params = Object.fromEntries(url.searchParams.entries())
         const { chatId, query } = searchQueryValidator.parse(params)
 
-        if (chatId.startsWith("group--")) {
-            const groupId = chatId.slice("group--".length)
-            const isMember = await db.sismember(`group:${groupId}:members`, session.user.id)
-            if (!isMember) return new Response("Forbidden", { status: 403 })
-        } else {
-            const ids = chatId.split("--")
-            if (ids.length !== 2 || !ids.includes(session.user.id)) {
-                return new Response("Forbidden", { status: 403 })
-            }
-            const friendId = ids[0] === session.user.id ? ids[1] : ids[0]
-            const isFriend = await db.sismember(`user:${session.user.id}:friends`, friendId)
-            if (!isFriend) return new Response("Forbidden", { status: 403 })
-        }
+        if (!(await hasCurrentChatAccess(db, chatId, session.user.id))) return new Response("Forbidden", { status: 403 })
+        const quota = await rateLimit(session.user.id, "message_search", { limit: 30, windowSeconds: 60 })
+        if (!quota.success) return new Response("Too many searches. Please slow down.", { status: 429, headers: { "Retry-After": "60" } })
 
-        const rawMembers = (await db.zrange(`chat:${chatId}:messages`, 0, -1)) as unknown[]
+        // Bound work per request: search the most recent 500 records and return
+        // at most 50 matches. Older history can be loaded through pagination.
+        const rawMembers = (await db.zrange(`chat:${chatId}:messages`, -500, -1)) as unknown[]
         const results: Message[] = []
         const lowerQuery = query.toLowerCase()
 
@@ -50,7 +44,8 @@ export async function GET(req: Request) {
             }
         }
 
-        return Response.json({ results })
+        const hasMore = results.length > 50
+        return Response.json({ results: results.slice(0, 50), hasMore, scanned: rawMembers.length })
     } catch (error) {
         if (error instanceof z.ZodError) {
             return new Response('Invalid search query', { status: 422 })

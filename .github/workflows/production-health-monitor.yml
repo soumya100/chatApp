@@ -1,0 +1,61 @@
+name: ChatApp production health monitor
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chatapp-production-health
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: HTTPS and authenticated Redis readiness probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: Validate monitor configuration
+        env:
+          CHATAPP_BASE_URL: ${{ vars.CHATAPP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$CHATAPP_BASE_URL" || { echo "::error::Set production environment variable CHATAPP_BASE_URL."; exit 1; }
+          test -n "$CRON_SECRET" || { echo "::error::Set production environment secret CRON_SECRET."; exit 1; }
+          case "$CHATAPP_BASE_URL" in
+            https://*) ;;
+            *) echo "::error::CHATAPP_BASE_URL must use HTTPS."; exit 1 ;;
+          esac
+
+      - name: Check public login route
+        env:
+          CHATAPP_BASE_URL: ${{ vars.CHATAPP_BASE_URL }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 20 \
+            --output /dev/null \
+            "${CHATAPP_BASE_URL%/}/login"
+
+      - name: Check authenticated Redis readiness and queue counters
+        env:
+          CHATAPP_BASE_URL: ${{ vars.CHATAPP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --silent --show-error --max-time 20 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${CHATAPP_BASE_URL%/}/api/health/redis")"
+          echo "$response" | jq -e '
+            .status == "ok" and
+            .redis == "reachable" and
+            (.queues.expiry | type == "number") and
+            (.queues.mediaCleanup | type == "number") and
+            (.queues.mediaOrphans | type == "number") and
+            (.totalPending | type == "number")
+          ' >/dev/null
+          echo "$response" | jq '{status, redis, queues, totalPending, checkedAt}'

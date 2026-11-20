@@ -1,4 +1,5 @@
 import { authOptions } from "@/lib/auth"
+import { hasCurrentChatAccess } from "@/lib/chat-access"
 import { db } from "@/lib/db"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
@@ -14,7 +15,14 @@ const deleteValidator = z.object({
 function isOwnedVercelBlob(url: string) {
     try {
         const parsed = new URL(url)
-        return parsed.protocol === "https:" && parsed.hostname.endsWith(".public.blob.vercel-storage.com")
+        return parsed.protocol === "https:"
+            && !parsed.username
+            && !parsed.password
+            && !parsed.port
+            && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.public\.blob\.vercel-storage\.com$/i.test(parsed.hostname)
+            && parsed.pathname.length > 1
+            && !parsed.search
+            && !parsed.hash
     } catch {
         return false
     }
@@ -31,6 +39,11 @@ for _, raw in ipairs(rows) do
     if message.senderId ~= ARGV[2] then
       return cjson.encode({error = "Forbidden"})
     end
+    local cleanupRecord = nil
+    if message.mediaUrl and string.match(message.mediaUrl, "^https://[A-Za-z0-9][A-Za-z0-9%-]*%.public%.blob%.vercel%-storage%.com/") then
+      cleanupRecord = cjson.encode({url = message.mediaUrl, queuedAt = tonumber(ARGV[3])})
+      redis.call("ZADD", KEYS[2], tonumber(ARGV[3]), cleanupRecord)
+    end
     message.text = "This message was deleted"
     message.isDeleted = true
     message.mediaUrl = nil
@@ -42,7 +55,7 @@ for _, raw in ipairs(rows) do
     local updated = cjson.encode(message)
     redis.call("ZREM", KEYS[1], raw)
     redis.call("ZADD", KEYS[1], tonumber(message.timestamp), updated)
-    return cjson.encode({message = message})
+    return cjson.encode({message = message, cleanupRecord = cleanupRecord})
   end
 end
 return cjson.encode({error = "Message not found"})
@@ -75,17 +88,10 @@ export async function POST(req: Request) {
         if (!parsed.success) return new Response("Invalid request payload", { status: 422 })
         const { messageId, chatId } = parsed.data
 
-        if (chatId.startsWith("group--")) {
-            const groupId = chatId.slice("group--".length)
-            const isMember = await db.sismember(`group:${groupId}:members`, userId)
-            if (!isMember) return new Response("Forbidden: You are not a member of this group", { status: 403 })
-        } else {
-            const ids = chatId.split("--")
-            if (ids.length !== 2 || !ids.includes(userId)) return new Response("Forbidden", { status: 403 })
-        }
+        if (!(await hasCurrentChatAccess(db, chatId, userId))) return new Response("Forbidden", { status: 403 })
 
-        // Preflight ownership before the external Blob call. The Lua mutation
-        // repeats ownership/deleted checks atomically to close the Redis race.
+        // Preflight ownership; the Lua script repeats the check and enqueues
+        // owned Blob URLs atomically with the tombstone before any external call.
         const existing = await findMessage(chatId, messageId)
         if (!existing) return new Response("Message not found", { status: 404 })
         if (existing.senderId === "system" || existing.isDeleted) {
@@ -93,20 +99,26 @@ export async function POST(req: Request) {
         }
         if (existing.senderId !== userId) return new Response("Forbidden: You can only delete your own messages", { status: 403 })
 
-        if (existing.mediaUrl && isOwnedVercelBlob(existing.mediaUrl)) {
-            try {
-                await del(existing.mediaUrl)
-            } catch (error) {
-                console.error("[message/delete] Blob deletion failed:", error)
-                return Response.json({ message: "Unable to permanently delete the attachment. Please retry." }, { status: 502 })
-            }
-        }
-
-        const rawResult = await db.eval(atomicDelete, [`chat:${chatId}:messages`], [messageId, userId])
+        const rawResult = await db.eval(atomicDelete, [`chat:${chatId}:messages`, "media:cleanup"], [messageId, userId, String(Date.now())])
         const result = decodeResult(rawResult)
         if (result?.error) {
             const status = result.error === "Message not found" ? 404 : result.error === "Forbidden" ? 403 : 400
             return new Response(result.error, { status })
+        }
+
+        // Metadata is already tombstoned. Blob deletion is now retryable: a
+        // storage outage leaves a durable cleanup job instead of a live message
+        // pointing at a deleted object (or a deleted message leaking the object).
+        if (result.cleanupRecord) {
+            try {
+                const cleanup = JSON.parse(result.cleanupRecord) as { url: string }
+                if (isOwnedVercelBlob(cleanup.url)) {
+                    await del(cleanup.url)
+                    await db.zrem("media:cleanup", result.cleanupRecord)
+                }
+            } catch (error) {
+                console.error("[message/delete] Blob cleanup deferred for retry:", error)
+            }
         }
 
         await Promise.allSettled([
