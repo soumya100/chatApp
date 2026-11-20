@@ -52,6 +52,9 @@ jobs:
       - name: Unit and API regression suite
         run: yarn test
 
+      - name: Event poll API, authorization and security regression suite
+        run: yarn test:events
+
       - name: Security and source regression contracts
         run: yarn test:security
 
