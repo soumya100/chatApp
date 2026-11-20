@@ -111,11 +111,11 @@ export async function POST(req: Request) {
             }
             const rawSenderPreferences = await db.get(groupPreferencesKey(session.user.id, groupId))
             const senderPreferences = groupPreferencesOrDefault(rawSenderPreferences)
+            const existingGroupSend = await db.get(`message:idempotency:${session.user.id}:${chatId}:${requestId}`)
+            if (existingGroupSend) return Response.json(typeof existingGroupSend === "string" ? JSON.parse(existingGroupSend) : existingGroupSend)
             if (!(await isValidReplyTarget(chatId, payload.replyTo))) {
                 return new Response('Cannot reply to a deleted or system-generated message', { status: 400 })
             }
-            const existingGroupSend = await db.get(`message:idempotency:${session.user.id}:${chatId}:${requestId}`)
-            if (existingGroupSend) return Response.json(typeof existingGroupSend === "string" ? JSON.parse(existingGroupSend) : existingGroupSend)
             const { success: isAllowed } = await rateLimit(session.user.id, 'send_message', { limit: 15, windowSeconds: 10 })
             if (!isAllowed) return new Response('Too many messages sent. Please slow down.', { status: 429, headers: { 'Retry-After': '5' } })
 
@@ -191,11 +191,11 @@ export async function POST(req: Request) {
         if (!isFriend) {
             return new Response('Unauthorized', { status: 401 })
         }
+        const existingDirectSend = await db.get(`message:idempotency:${session.user.id}:${chatId}:${requestId}`)
+        if (existingDirectSend) return Response.json(typeof existingDirectSend === "string" ? JSON.parse(existingDirectSend) : existingDirectSend)
         if (!(await isValidReplyTarget(chatId, payload.replyTo))) {
             return new Response('Cannot reply to a deleted or system-generated message', { status: 400 })
         }
-        const existingDirectSend = await db.get(`message:idempotency:${session.user.id}:${chatId}:${requestId}`)
-        if (existingDirectSend) return Response.json(typeof existingDirectSend === "string" ? JSON.parse(existingDirectSend) : existingDirectSend)
         const { success: isAllowed } = await rateLimit(session.user.id, 'send_message', { limit: 15, windowSeconds: 10 })
         if (!isAllowed) return new Response('Too many messages sent. Please slow down.', { status: 429, headers: { 'Retry-After': '5' } })
 
