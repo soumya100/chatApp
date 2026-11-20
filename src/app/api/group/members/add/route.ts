@@ -24,7 +24,7 @@ function decode<T>(raw: unknown): T {
     return (typeof raw === "string" ? JSON.parse(raw) : raw) as T
 }
 
-// Realtime/infra error strings can embed control characters that forge log
+// Realtime error strings can embed control characters that forge log
 // lines. They are neutralised without a control-character regex (which itself
 // trips lint rules) and bounded so one failure cannot flood the log.
 function sanitizeLogDetail(detail: string): string {
