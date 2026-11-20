@@ -31,8 +31,7 @@ test("upload: completed but unclaimed Blob uploads enter the orphan index", asyn
   });
   const result = await upload.POST(request);
   assert.equal(result.status, 200);
-  assert.equal(h.getZset("media:orphans").length, 1);
-  assert.equal(h.getZset("media:orphans")[0].value, url);
+  assert.deepEqual(await h.db.zrange("media:orphans", 0, -1), [url]);
 });
 
 test("message send: attaching an uploaded Blob removes its orphan marker atomically", async () => {
@@ -47,7 +46,7 @@ test("message send: attaching an uploaded Blob removes its orphan marker atomica
     body: JSON.stringify({ chatId: "owner--member", text: "", mediaUrl: url, mediaType: "image", requestId: "attach-orphan-0001" }),
   }));
   assert.equal(response.status, 200);
-  assert.equal(h.getZset("media:orphans").length, 0);
+  assert.equal((await h.db.zrange("media:orphans", 0, -1)).length, 0);
 });
 
 test("media cleanup: retries deleted-message jobs and aged abandoned uploads", async () => {
@@ -65,5 +64,5 @@ test("media cleanup: retries deleted-message jobs and aged abandoned uploads", a
   assert.equal(result.data.deleted, 2);
   assert.deepEqual(h.blobCalls.sort(), [deletedUrl, orphanUrl].sort());
   assert.equal(h.getZset("media:cleanup").length, 0);
-  assert.equal(h.getZset("media:orphans").length, 0);
+  assert.equal((await h.db.zrange("media:orphans", 0, -1)).length, 0);
 });
