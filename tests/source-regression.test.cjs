@@ -241,3 +241,15 @@ test("rate limiting is performed in a single Redis Lua transaction", () => {
   assert.match(source, /db\.eval\(/);
   assert.doesNotMatch(source, /db\.pipeline\(/);
 });
+
+
+test("chat search uses debounced server-side history results and cancels stale requests", () => {
+  const chat = read("src/components/Chat/index.tsx");
+  const search = read("src/app/api/message/search/route.ts");
+  assert.match(chat, /api\/message\/search\?chatId=/);
+  assert.match(chat, /window\.setTimeout/);
+  assert.match(chat, /controller\.abort\(\)/);
+  assert.match(chat, /results\.forEach\(message => merged\.set/);
+  assert.match(search, /zrange\(\`chat:\$\{chatId\}:messages\`, -500, -1\)/);
+  assert.match(search, /results\.slice\(0, 50\)/);
+});
