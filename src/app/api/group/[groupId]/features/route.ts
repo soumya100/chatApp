@@ -106,6 +106,7 @@ end
 local function normalizeFeatureArrays(encoded)
   encoded = string.gsub(encoded, '"polls":{}', '"polls":[]')
   encoded = string.gsub(encoded, '"events":{}', '"events":[]')
+  encoded = string.gsub(encoded, '"timeOptions":{}', '"timeOptions":[]')
   encoded = string.gsub(encoded, '"announcements":{}', '"announcements":[]')
   encoded = string.gsub(encoded, '"votes":{}', '"votes":[]')
   encoded = string.gsub(encoded, '"going":{}', '"going":[]')
