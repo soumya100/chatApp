@@ -506,6 +506,11 @@ const db = {
       const message = parse(rows[index].member);
       if (message.senderId === "system" || message.isDeleted) return JSON.stringify({ error: "Message cannot be deleted" });
       if (message.senderId !== args[1]) return JSON.stringify({ error: "Forbidden" });
+      let cleanupRecord = null;
+      if (message.mediaUrl && /https:\/\/[^/]+\.public\.blob\.vercel-storage\.com\//.test(message.mediaUrl)) {
+        cleanupRecord = JSON.stringify({ url: message.mediaUrl, queuedAt: Number(args[2]) });
+        zadd(keys[1], { score: Number(args[2]), member: cleanupRecord });
+      }
       message.text = "This message was deleted";
       message.isDeleted = true;
       delete message.mediaUrl;
@@ -516,7 +521,7 @@ const db = {
       delete message.senderImg;
       rows[index] = { score: rows[index].score, member: JSON.stringify(message) };
       zsets.set(keys[0], rows);
-      return JSON.stringify({ message });
+      return JSON.stringify({ message, cleanupRecord });
     }
 
     if (script.includes("Message cannot be reacted to")) {
