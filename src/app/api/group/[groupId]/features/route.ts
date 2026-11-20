@@ -1,5 +1,7 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { messageValidator } from "@/lib/validations/message"
+import { groupPreferencesKey, groupPreferencesOrDefault } from "@/lib/group-preferences"
 import { resolveAdminIds } from "@/lib/group"
 import { pusherServer } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
@@ -93,6 +95,13 @@ local function normalizeFeatureArrays(encoded)
   return encoded
 end
 
+-- Feature creation and its inbox message are committed together so the
+-- activity cannot exist without a corresponding group conversation entry.
+if ARGV[4] and ARGV[4] ~= "" then
+  local message = cjson.decode(ARGV[4])
+  redis.call("ZADD", KEYS[2], message.timestamp, ARGV[4])
+end
+
 local encodedFeatures = normalizeFeatureArrays(cjson.encode(features))
 local encodedResult = normalizeFeatureArrays(cjson.encode(result))
 redis.call("SET", KEYS[1], encodedFeatures)
@@ -143,18 +152,54 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
       payload = { eventId: parsed.data.eventId, response: parsed.data.response }
     }
 
+    const createsInboxMessage = action === "createPoll" || action === "createEvent" || action === "announce"
+    const inboxText = action === "createPoll"
+      ? `📊 Poll: ${payload.question}\nOptions: ${payload.options.map((option: any) => option.label).join(" · ")}`
+      : action === "createEvent"
+        ? [`📅 Event: ${payload.title}`, `When: ${new Date(payload.startsAt).toLocaleString()}`, payload.location ? `Location: ${payload.location}` : "", payload.description || ""].filter(Boolean).join("\n")
+        : action === "announce" ? `📢 Announcement: ${payload.text}` : ""
+    const inboxMessage = createsInboxMessage ? messageValidator.parse({
+      id: nanoid(),
+      receiverId: `group--${groupId}`,
+      senderId: userId,
+      text: inboxText.slice(0, 2000),
+      timestamp: now,
+      senderName: session.user.name || "Group member",
+      featureType: action === "createPoll" ? "poll" : action === "createEvent" ? "event" : "announcement",
+      featureId: payload.id
+    }) : null
+
     const key = `group:${groupId}:features`
-    const rawResult = await db.eval(atomicFeatureUpdate, [key], [userId, action, JSON.stringify(payload)])
+    const messageKey = `chat:group--${groupId}:messages`
+    const rawResult = await db.eval(atomicFeatureUpdate, [key, messageKey], [userId, action, JSON.stringify(payload), inboxMessage ? JSON.stringify(inboxMessage) : ""])
     const updated = typeof rawResult === "string" ? JSON.parse(rawResult) : rawResult as any
     if (updated?.error) {
       const status = updated.error === "Poll is unavailable" || updated.error === "Event not found" ? 404 : 400
       return Response.json({ message: updated.error }, { status })
     }
 
-    await Promise.allSettled([
-      pusherServer.trigger(toPusherKey(`private-chat:group--${groupId}`), "group_feature_updated", { action, result: updated.result })
-    ])
-    return Response.json({ success: true, result: updated.result, features: updated.features })
+    const channel = toPusherKey(`private-chat:group--${groupId}`)
+    const realtimeTasks: Promise<unknown>[] = [
+      pusherServer.trigger(channel, "group_feature_updated", { action, result: updated.result })
+    ]
+    if (inboxMessage) {
+      realtimeTasks.push(pusherServer.trigger(channel, "incoming-message", inboxMessage))
+      const recipients = (group.memberIds || []).filter(memberId => memberId !== userId)
+      for (const memberId of recipients) {
+        realtimeTasks.push((async () => {
+          await db.hincrby(`user:${memberId}:unread`, `group--${groupId}`, 1)
+          const preferences = groupPreferencesOrDefault(await db.get(groupPreferencesKey(memberId, groupId)))
+          if (preferences.notifications !== "muted") {
+            await pusherServer.trigger(toPusherKey(`private-user:${memberId}:chats`), "new_message", {
+              ...inboxMessage,
+              senderName: `${session.user.name || "Group member"} (${group.name || "Group"})`
+            })
+          }
+        })())
+      }
+    }
+    await Promise.allSettled(realtimeTasks)
+    return Response.json({ success: true, result: updated.result, features: updated.features, message: inboxMessage || undefined })
   } catch (error) {
     console.error("Group feature action failed:", error)
     return Response.json({ message: "Unable to update group feature" }, { status: 500 })
