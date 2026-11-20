@@ -61,3 +61,15 @@ test("Chat surfaces send failures to the composer instead of swallowing the reje
   assert.match(handler, /throw error/);
   assert.doesNotMatch(handler, /toast\.error/);
 });
+
+test("group typing indicators track multiple members independently and expire stale states", () => {
+  const chat = fs.readFileSync(
+    path.join(__dirname, "../src/components/Chat/index.tsx"),
+    "utf8"
+  );
+  assert.match(chat, /const \[typingUserIds, setTypingUserIds\] = useState<string\[\]>\(\[\]\)/);
+  assert.match(chat, /isGroupChat \? userId !== sessionId : userId !== chatPartner\.id/);
+  assert.match(chat, /previous\.includes\(userId\) \? previous : \[\.\.\.previous, userId\]/);
+  assert.match(chat, /previous\.filter\(id => id !== userId\)/);
+  assert.match(chat, /typingTimeoutsRef\.current\.forEach\(timeout => clearTimeout\(timeout\)\)/);
+});
