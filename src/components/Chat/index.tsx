@@ -1,6 +1,6 @@
 "use client"
 import { Avatar } from '@/common'
-import { FC, useEffect, useRef, useState } from 'react'
+import { FC, useCallback, useEffect, useRef, useState } from 'react'
 import Messages from './Messages'
 import ChatInput from './ChatInput'
 import { pusherClient } from '@/lib/pusher'
@@ -63,7 +63,7 @@ const Chat: FC<ChatProps> = ({
   const typingTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
   const flushingOfflineQueueRef = useRef(false)
 
-  const flushOfflineQueue = async () => {
+  const flushOfflineQueue = useCallback(async () => {
     if (typeof navigator === 'undefined' || !navigator.onLine || flushingOfflineQueueRef.current) return
     flushingOfflineQueueRef.current = true
     try {
@@ -96,7 +96,7 @@ const Chat: FC<ChatProps> = ({
     } finally {
       flushingOfflineQueueRef.current = false
     }
-  }
+  }, [chatId])
 
   const jumpToPinnedMessage = (messageId: string) => {
     const element = document.getElementById(`message-${messageId}`)
@@ -146,7 +146,7 @@ const Chat: FC<ChatProps> = ({
       active = false
       window.removeEventListener('online', onOnline)
     }
-  }, [chatId, sessionId, chatPartner.id])
+  }, [chatId, sessionId, chatPartner.id, flushOfflineQueue])
 
   useEffect(() => {
     setTypingUserIds([])
