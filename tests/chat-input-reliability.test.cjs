@@ -72,4 +72,5 @@ test("group typing indicators track multiple members independently and expire st
   assert.match(chat, /previous\.includes\(userId\) \? previous : \[\.\.\.previous, userId\]/);
   assert.match(chat, /previous\.filter\(id => id !== userId\)/);
   assert.match(chat, /typingTimeoutsRef\.current\.forEach\(timeout => clearTimeout\(timeout\)\)/);
+  assert.match(chat, /useEffect\(\(\) => \{\s*setTypingUserIds\(\[\]\)/);
 });
