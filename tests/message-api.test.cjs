@@ -360,8 +360,8 @@ test("message read: membership, receipts opt-out and validation", async () => {
   h.setSession("outsider");
   assert.equal((await status(await read.POST(h.request({ chatId: GROUP_CHAT })))).status, 403);
   h.setSession("owner");
-  // Read receipts only require chat participation, not friendship (current contract).
-  assert.equal((await status(await read.POST(h.request({ chatId: "owner--stranger" })))).status, 200);
+  // A former friend must not retain read-receipt access after removal.
+  assert.equal((await status(await read.POST(h.request({ chatId: "owner--stranger" })))).status, 403);
   h.reset({ session: null });
   assert.equal((await status(await read.POST(h.request({ chatId: DIRECT })))).status, 401);
   h.reset();
@@ -528,4 +528,14 @@ test("message typing: malformed JSON and invalid chat identifiers fail safely", 
   h.reset();
   assert.equal((await status(await typing.POST(h.requestRaw("{invalid")))).status, 400);
   assert.equal((await status(await typing.POST(h.request({ chatId: "" })))).status, 422);
+});
+
+test("message read: realtime provider failure does not undo the durable read", async () => {
+  h.reset();
+  seedDirectFriendship();
+  h.seedHash("user:owner:unread", { [DIRECT]: 2 });
+  h.setPusherFailure(true);
+  const result = await status(await read.POST(h.request({ chatId: DIRECT })));
+  assert.equal(result.status, 200);
+  assert.deepEqual(h.getHash("user:owner:unread"), {});
 });
