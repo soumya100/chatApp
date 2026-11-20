@@ -20,6 +20,7 @@ export interface OfflineMessageRecord {
 const DATABASE_NAME = "chatapp-offline-queue"
 const STORE_NAME = "messages"
 const DATABASE_VERSION = 1
+const MAX_QUEUED_MESSAGES_PER_CHAT = 200
 
 function openQueueDatabase(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") return Promise.reject(new Error("Offline storage is unavailable"))
@@ -43,10 +44,27 @@ export async function enqueueOfflineMessage(record: OfflineMessageRecord): Promi
   try {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(STORE_NAME, "readwrite")
-      transaction.objectStore(STORE_NAME).put(record)
+      const store = transaction.objectStore(STORE_NAME)
+      let queueFull = false
+      const existing = store.get(record.id)
+      existing.onsuccess = () => {
+        if (existing.result) {
+          store.put(record)
+          return
+        }
+        const count = store.index("chatId").count(record.chatId)
+        count.onsuccess = () => {
+          if (count.result >= MAX_QUEUED_MESSAGES_PER_CHAT) {
+            queueFull = true
+            transaction.abort()
+            return
+          }
+          store.put(record)
+        }
+      }
       transaction.oncomplete = () => resolve()
       transaction.onerror = () => reject(transaction.error || new Error("Unable to save offline message"))
-      transaction.onabort = () => reject(transaction.error || new Error("Offline message save was aborted"))
+      transaction.onabort = () => reject(new Error(queueFull ? "Offline message queue is full for this chat" : "Offline message save was aborted"))
     })
   } finally {
     database.close()
