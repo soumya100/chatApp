@@ -1,4 +1,5 @@
 import { authOptions } from "@/lib/auth"
+import { hasCurrentChatAccess } from "@/lib/chat-access"
 import { db } from "@/lib/db"
 import { groupPreferencesKey, groupPreferencesOrDefault } from "@/lib/group-preferences"
 import { pusherServer } from "@/lib/pusher"
@@ -25,23 +26,15 @@ export async function POST(req: Request) {
         }
         const { chatId } = readPayloadValidator.parse(body)
 
+        if (!(await hasCurrentChatAccess(db, chatId, session.user.id))) return new Response('Forbidden', { status: 403 })
+        await db.hdel(`user:${session.user.id}:unread`, chatId)
+
         // A group read receipt is visible only when the reader has opted in.
         if (chatId.startsWith('group--')) {
             const groupId = chatId.slice('group--'.length)
-            const isMember = await db.sismember(`group:${groupId}:members`, session.user.id)
-            if (!isMember) return new Response('Forbidden', { status: 403 })
-            await db.hdel(`user:${session.user.id}:unread`, chatId)
             const rawPreferences = await db.get(groupPreferencesKey(session.user.id, groupId))
             const preferences = groupPreferencesOrDefault(rawPreferences)
             if (preferences.showReadReceipts === false) return new Response('OK')
-        } else {
-            const ids = chatId.split('--')
-            if (ids.length !== 2 || !ids.includes(session.user.id)) return new Response('Forbidden', { status: 403 })
-            const friendId = ids[0] === session.user.id ? ids[1] : ids[0]
-            if (!(await db.sismember(`user:${session.user.id}:friends`, friendId))) {
-                return new Response('Forbidden', { status: 403 })
-            }
-            await db.hdel(`user:${session.user.id}:unread`, chatId)
         }
 
         // Clearing unread state is the durable operation. Realtime read-receipt
