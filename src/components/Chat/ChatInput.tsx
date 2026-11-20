@@ -237,7 +237,7 @@ const ChatInput: FC<ChatInputProps> = ({
       // Clearing before the request succeeds loses messages on offline/network/API
       // failures and makes safe manual retry impossible.
       if (onSendMessage) {
-        await onSendMessage(trimmed, mediaPayload)
+        await onSendMessage(trimmed, mediaPayload, requestId)
       } else {
         await axios.post('/api/message/send', {
           text: trimmed,
