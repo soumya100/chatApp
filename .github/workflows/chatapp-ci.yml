@@ -49,11 +49,11 @@ jobs:
       - name: Install locked dependencies
         run: yarn install --frozen-lockfile --non-interactive
 
-      - name: Unit and API regression suite
-        run: yarn test
-
       - name: Event poll API, authorization and security regression suite
         run: yarn test:events
+
+      - name: Unit and API regression suite
+        run: yarn test
 
       - name: Security and source regression contracts
         run: yarn test:security
