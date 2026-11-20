@@ -119,7 +119,7 @@ test("event poll voting: duplicate choices are deduplicated and multiple time sl
   const voted = await read(await post({ action: "voteEvent", eventId: id, optionIds: selected }));
   assert.equal(voted.status, 200);
   assert.deepEqual(voted.data.result.timeOptions.map(option => option.votes), [["member"], ["member"]]);
-  assert.ok(h.pusherEvents.some(event => event.event === "group_feature_updated" && event.data.action === "voteEvent"));
+  assert.ok(h.pusherEvents.some(event => event.event === "group_feature_updated" && event.payload.action === "voteEvent"));
 });
 
 test("event poll voting: changing or clearing a vote replaces every previous selection", async () => {
@@ -170,7 +170,7 @@ test("event poll RSVP: all states are exclusive, repeatable, and independent fro
   assert.equal((await read(await post({ action: "respondEvent", eventId: "missing", response: "going" }))).status, 404);
 });
 
-test("event poll privacy: GET exposes the requesting member's choices, not another member's identity", async () => {
+test("event poll privacy: GET returns member-specific choices and aggregate vote totals", async () => {
   h.reset();
   const created = await read(await createPollEvent());
   const { id, timeOptions } = created.data.result;
