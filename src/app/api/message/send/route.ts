@@ -121,6 +121,7 @@ export async function POST(req: Request) {
 
             const messageData = {
                 id: nanoid(),
+                clientRequestId: requestId,
                 receiverId: `group--${groupId}`,
                 senderId: session.user.id,
                 text,
@@ -201,6 +202,7 @@ export async function POST(req: Request) {
 
         const messageData = {
             id: nanoid(),
+                clientRequestId: requestId,
             receiverId: friendId,
             senderId: session.user.id,
             text,
