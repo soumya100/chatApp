@@ -7,7 +7,7 @@ import { getServerSession } from "next-auth"
 import { z } from "zod"
 
 const readPayloadValidator = z.object({
-    chatId: z.string()
+    chatId: z.string().min(1).max(256)
 })
 
 export async function POST(req: Request) {
@@ -17,7 +17,12 @@ export async function POST(req: Request) {
             return new Response('Unauthorized', { status: 401 })
         }
 
-        const body = await req.json()
+        let body: unknown
+        try {
+            body = await req.json()
+        } catch {
+            return new Response('Invalid request payload', { status: 400 })
+        }
         const { chatId } = readPayloadValidator.parse(body)
 
         // A group read receipt is visible only when the reader has opted in.
@@ -32,6 +37,10 @@ export async function POST(req: Request) {
         } else {
             const ids = chatId.split('--')
             if (ids.length !== 2 || !ids.includes(session.user.id)) return new Response('Forbidden', { status: 403 })
+            const friendId = ids[0] === session.user.id ? ids[1] : ids[0]
+            if (!(await db.sismember(`user:${session.user.id}:friends`, friendId))) {
+                return new Response('Forbidden', { status: 403 })
+            }
             await db.hdel(`user:${session.user.id}:unread`, chatId)
         }
 
