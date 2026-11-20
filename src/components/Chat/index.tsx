@@ -13,6 +13,7 @@ import toast from 'react-hot-toast'
 import dynamic from 'next/dynamic'
 import PinnedMessagesBanner from './PinnedMessagesBanner'
 import { useRouter } from 'next/navigation'
+import { enqueueOfflineMessage, listOfflineMessages, removeOfflineMessage } from '@/lib/offline-message-queue'
 
 // The group dialogs are only ever mounted after a user action, so they load
 // lazily and keep their markup out of the first-load chat chunk.
@@ -60,6 +61,42 @@ const Chat: FC<ChatProps> = ({
     initialGroup?.memberIds?.length || 0
   )
   const typingTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
+  const flushingOfflineQueueRef = useRef(false)
+
+  const flushOfflineQueue = async () => {
+    if (typeof navigator === 'undefined' || !navigator.onLine || flushingOfflineQueueRef.current) return
+    flushingOfflineQueueRef.current = true
+    try {
+      const queued = await listOfflineMessages(chatId)
+      for (const record of queued) {
+        try {
+          const response = await axios.post<Message>('/api/message/send', record.payload)
+          await removeOfflineMessage(record.id)
+          setMessages(previous => previous.map(message =>
+            message.clientRequestId === record.id || message.id === record.id
+              ? { ...message, ...response.data, status: 'sent' }
+              : message
+          ))
+        } catch (error: any) {
+          // A transient/network failure remains queued. Permanent request errors
+          // are not retried forever and are surfaced as failed messages.
+          if (error?.response && error.response.status >= 400 && error.response.status < 500) {
+            await removeOfflineMessage(record.id)
+            setMessages(previous => previous.map(message =>
+              message.clientRequestId === record.id || message.id === record.id
+                ? { ...message, status: 'error' }
+                : message
+            ))
+          }
+          break
+        }
+      }
+    } catch (error) {
+      console.error('[offline-queue] Unable to flush queued messages:', error)
+    } finally {
+      flushingOfflineQueueRef.current = false
+    }
+  }
 
   const jumpToPinnedMessage = (messageId: string) => {
     const element = document.getElementById(`message-${messageId}`)
@@ -73,6 +110,43 @@ const Chat: FC<ChatProps> = ({
   useEffect(() => {
     setMessages(initialMessages)
   }, [initialMessages])
+
+  useEffect(() => {
+    let active = true
+    const restoreAndFlush = async () => {
+      try {
+        const queued = await listOfflineMessages(chatId)
+        if (!active) return
+        setMessages(previous => {
+          const known = new Set(previous.map(message => message.clientRequestId || message.id))
+          const restored = queued
+            .filter(record => !known.has(record.id))
+            .map(record => ({
+              id: record.id,
+              clientRequestId: record.id,
+              senderId: sessionId,
+              receiverId: chatPartner.id,
+              text: record.payload.text,
+              timestamp: record.createdAt,
+              status: 'queued' as const,
+              isSeen: false,
+              ...record.payload,
+            } as Message))
+          return [...restored, ...previous]
+        })
+        if (navigator.onLine) void flushOfflineQueue()
+      } catch (error) {
+        console.error('[offline-queue] Unable to restore queued messages:', error)
+      }
+    }
+    const onOnline = () => { void flushOfflineQueue() }
+    void restoreAndFlush()
+    window.addEventListener('online', onOnline)
+    return () => {
+      active = false
+      window.removeEventListener('online', onOnline)
+    }
+  }, [chatId, sessionId, chatPartner.id])
 
   useEffect(() => {
     setTypingUserIds([])
@@ -203,9 +277,24 @@ const Chat: FC<ChatProps> = ({
         )
       )
     } catch (error: any) {
-      // Keep the failed optimistic row visible, but reject the promise so the
-      // composer does not clear its draft. The user can retry from either
-      // surface without silently losing the original text/attachment.
+      // Persist the exact request (including its stable idempotency key) in
+      // IndexedDB when offline or when the network response is unavailable.
+      // Replaying the same requestId is safe even if the server committed it
+      // but the response was lost.
+      if (!error?.response || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        try {
+          await enqueueOfflineMessage({
+            id: tempId,
+            chatId,
+            createdAt: Date.now(),
+            payload: { text, chatId, requestId: tempId, ...mediaPayload },
+          })
+          setMessages(prev => prev.map(msg => msg.id === tempId ? { ...msg, status: 'queued' } : msg))
+          return
+        } catch (queueError) {
+          console.error('[offline-queue] Could not persist message:', queueError)
+        }
+      }
       setMessages((prev) =>
         prev.map((msg) => (msg.id === tempId ? { ...msg, status: 'error' } : msg))
       )
