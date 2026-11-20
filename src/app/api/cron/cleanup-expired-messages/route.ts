@@ -9,7 +9,14 @@ type ExpiryEntry = { chatKey: string; messageId: string; raw: string }
 function isOwnedVercelBlob(url: string) {
   try {
     const parsed = new URL(url)
-    return parsed.protocol === "https:" && parsed.hostname.endsWith(".public.blob.vercel-storage.com")
+    return parsed.protocol === "https:"
+      && !parsed.username
+      && !parsed.password
+      && !parsed.port
+      && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.public\\.blob\\.vercel-storage\\.com$/i.test(parsed.hostname)
+      && parsed.pathname.length > 1
+      && !parsed.search
+      && !parsed.hash
   } catch {
     return false
   }
