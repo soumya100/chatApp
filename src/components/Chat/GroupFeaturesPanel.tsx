@@ -34,7 +34,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
     catch { toast.error("Unable to load group features") }
     finally { if (showLoading) setLoading(false) }
   }, [groupId])
-  useEffect(() => { if (!isOpen) return; void load(); const channel = pusherClient.subscribe(toPusherKey("private-chat:group--" + groupId)); const refresh = () => { void load(false) }; channel.bind("group_feature_updated", refresh); return () => { channel.unbind("group_feature_updated", refresh); pusherClient.unsubscribe(toPusherKey("private-chat:group--" + groupId)) } }, [isOpen, load, groupId])
+  useEffect(() => { if (!isOpen) return; void load(); const channel = pusherClient.subscribe(toPusherKey("private-chat:group--" + groupId)); const refresh = () => { void load(false) }; channel.bind("group_feature_updated", refresh); return () => { channel.unbind("group_feature_updated", refresh) } }, [isOpen, load, groupId])
 
   const act = async (payload: any): Promise<boolean> => {
     if (busy) return false
