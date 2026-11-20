@@ -127,8 +127,9 @@ export const authOptions: NextAuthOptions = {
 
             const dbUserResult = (await fetchRedis("get", `user:${token.id}`)) as string | User | null
 
-            // Returning null tells NextAuth to invalidate the JWT/session.
-            // Do not fall back to stale claims when the account has been removed.
+            // NextAuth's JWT callback must return a JWT, not null. An empty subject
+            // prevents API authorization; an expired token forces re-authentication.
+            // Never fall back to stale claims when the account has been removed.
             if (!dbUserResult) {
                 return { ...token, id: "", exp: 0 }
             }
@@ -147,6 +148,11 @@ export const authOptions: NextAuthOptions = {
             }
         },
         async session({ session, token }) {
+            if (!token?.id || typeof token.id !== "string" || token.id.length === 0) {
+                session.expires = new Date(0).toISOString()
+                if (session.user) session.user.id = ""
+                return session
+            }
             if (token) {
                 session.user.id = token.id
                 session.user.email = token.email
