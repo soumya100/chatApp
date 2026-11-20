@@ -5,7 +5,7 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const BATCH_SIZE = 50
-const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000
+const ORPHAN_GRACE_MS = 7 * 24 * 60 * 60 * 1000
 
 function isOwnedVercelBlob(url: unknown): url is string {
     if (typeof url !== "string") return false
