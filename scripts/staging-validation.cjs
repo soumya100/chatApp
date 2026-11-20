@@ -179,8 +179,8 @@ async function main() {
     assert.ok(history.messages?.some(message => message.id === firstMessage.id), `${account.label} must be able to read the persisted test message`);
   }
 
-  await signOut(accounts.member);
   await runSoak(accounts, chatId);
+  await signOut(accounts.member);
   console.log("Authenticated staging authorization, session logout, message persistence/idempotency, cross-account isolation, and controlled soak checks passed.");
 }
 
