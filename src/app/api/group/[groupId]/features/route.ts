@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic"
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("createPoll"), question: z.string().trim().min(3).max(240), options: z.array(z.string().trim().min(1).max(100)).min(2).max(10), multiple: z.boolean().default(false) }),
   z.object({ action: z.literal("votePoll"), pollId: z.string().min(1), optionIds: z.array(z.string().min(1)).min(1).max(10) }),
-  z.object({ action: z.literal("createEvent"), title: z.string().trim().min(3).max(120), description: z.string().max(1000).optional(), startsAt: z.number().int().positive(), timeOptions: z.array(z.number().int().positive()).min(2).max(6).optional(), location: z.string().max(200).optional() }),
+  z.object({ action: z.literal("createEvent"), title: z.string().trim().min(3).max(120), description: z.string().max(1000).optional(), startsAt: z.number().int().positive(), timeOptions: z.array(z.number().int().positive()).min(2).max(6).refine(times => new Set(times).size === times.length, "Time options must be unique").optional(), location: z.string().max(200).optional() }),
   z.object({ action: z.literal("voteEvent"), eventId: z.string().min(1), optionIds: z.array(z.string().min(1)).min(1).max(6) }),
   z.object({ action: z.literal("respondEvent"), eventId: z.string().min(1), response: z.enum(["going", "maybe", "not-going"]) }),
   z.object({ action: z.literal("announce"), text: z.string().trim().min(1).max(2000) })
