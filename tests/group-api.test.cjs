@@ -290,6 +290,37 @@ test("group features: event creation rejects past dates and accepts future event
   assert.deepEqual(result.data.result.responses, { going: [], maybe: [], "not-going": [] });
 });
 
+test("group features: event time polls persist votes, replace prior choices and reject unknown options", async () => {
+  h.reset();
+  h.setSession("member");
+  const created = await read(await post(features, {
+    action: "createEvent",
+    title: "Choose a workshop time",
+    startsAt: Date.now() + 60_000,
+    timeOptions: [Date.now() + 120_000, Date.now() + 180_000],
+  }));
+  assert.equal(created.status, 200);
+  const eventId = created.data.result.id;
+  const [first, second] = created.data.result.timeOptions;
+  assert.equal(created.data.result.timeOptions.length, 2);
+  assert.deepEqual(first.votes, []);
+
+  let result = await read(await post(features, { action: "voteEvent", eventId, optionIds: [first.id, first.id] }));
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.result.timeOptions[0].votes, ["member"]);
+  assert.deepEqual(result.data.result.timeOptions[1].votes, []);
+
+  result = await read(await post(features, { action: "voteEvent", eventId, optionIds: [second.id] }));
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.result.timeOptions[0].votes, []);
+  assert.deepEqual(result.data.result.timeOptions[1].votes, ["member"]);
+
+  const personalized = await read(await get(features));
+  assert.deepEqual(personalized.data.features.events[0].myOptionIds, [second.id]);
+  assert.equal((await read(await post(features, { action: "voteEvent", eventId, optionIds: ["unknown"] }))).status, 400);
+  assert.equal((await read(await post(features, { action: "voteEvent", eventId: "missing", optionIds: [second.id] }))).status, 404);
+});
+
 test("group features: event responses move a user between RSVP states", async () => {
   h.reset();
   h.setSession("member");
