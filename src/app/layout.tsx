@@ -13,7 +13,7 @@ export const viewport: Viewport = {
   maximumScale: 5,
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#09090b" },
+    { media: "(prefers-color-scheme: dark)", color: "#020617" },
   ],
 };
 
@@ -80,7 +80,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} min-h-screen antialiased bg-white dark:bg-zinc-900 text-gray-900 dark:text-gray-100`}>
+      <body className={`${inter.className} min-h-screen antialiased bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100`}>
         <Provider>{children}</Provider>
       </body>
     </html>
