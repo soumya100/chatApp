@@ -7,6 +7,7 @@ import axios from 'axios'
 import { format } from 'date-fns'
 import {
   AlertCircle,
+  Megaphone,
   Check,
   CheckCheck,
   Download,
@@ -28,6 +29,7 @@ import {
 import { Dispatch, FC, SetStateAction, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import ForwardMessageModal from './ForwardMessageModal'
+import FeatureMessageCard from './FeatureMessageCard'
 
 // Inline Audio Player for Voice Messages
 const AudioPlayerMessage: FC<{
@@ -870,6 +872,7 @@ const Messages: FC<MessagesProps> = ({
                 {/* Message Bubble Container */}
                 <div
                   className={cn('px-4 py-2.5 rounded-2xl inline-block shadow-xs', {
+                    'ring-1 ring-amber-300/70 shadow-md shadow-amber-500/10': message.featureType === 'announcement' && !message.isDeleted,
                     'bg-indigo-600 text-white': isCurrentUser && !message.isDeleted,
                     'bg-gray-200 dark:bg-zinc-800 text-gray-900 dark:text-gray-100':
                       !isCurrentUser && !message.isDeleted,
@@ -1017,6 +1020,7 @@ const Messages: FC<MessagesProps> = ({
                     <>
                       {message.text && (
                         <p className='break-words text-sm'>
+                          {message.featureType === 'announcement' && !message.isDeleted && <Megaphone size={14} className='mr-1.5 inline-block align-[-2px] text-amber-200' aria-label='Announcement' />}
                           {message.text}
                           {message.isEdited && !message.isDeleted && (
                             <span className='ml-1.5 text-[0.65rem] opacity-75'>(edited)</span>
@@ -1062,6 +1066,9 @@ const Messages: FC<MessagesProps> = ({
                             </span>
                           )}
                         </p>
+                      )}
+                      {isGroupChat && !message.isDeleted && message.featureType && message.featureId && (
+                        <FeatureMessageCard groupId={chatId.replace('group--', '')} featureType={message.featureType} featureId={message.featureId} />
                       )}
 
                       {/* If only media and no text, render timestamp and status below media */}
