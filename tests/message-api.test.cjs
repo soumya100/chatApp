@@ -61,6 +61,35 @@ test("message send: direct happy path persists first, then broadcasts and counts
   assert.deepEqual(h.getHash("user:owner:unread"), {});
 });
 
+test("message send: retries with the same requestId persist and count a direct message once", async () => {
+  h.reset();
+  seedDirectFriendship();
+  const payload = { chatId: DIRECT, text: "retry-safe", requestId: "request-direct-0001" };
+  const first = await status(await send.POST(h.request(payload)));
+  const retry = await status(await send.POST(h.request(payload)));
+  assert.equal(first.status, 200);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.data.id, first.data.id, "a retry returns the original server message");
+  assert.equal(h.getDirectMessages().length, 1);
+  assert.deepEqual(h.getHash("user:member:unread"), { [DIRECT]: 1 });
+  assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 1);
+});
+
+test("message send: retries with the same requestId do not duplicate group unread counts", async () => {
+  h.reset();
+  seedGroupChat();
+  const payload = { chatId: GROUP_CHAT, text: "group retry-safe", requestId: "request-group-0001" };
+  const first = await status(await send.POST(h.request(payload)));
+  const retry = await status(await send.POST(h.request(payload)));
+  assert.equal(first.status, 200);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.data.id, first.data.id);
+  assert.equal(h.getMessages().length, 1);
+  assert.deepEqual(h.getHash("user:admin:unread"), { [GROUP_CHAT]: 1 });
+  assert.deepEqual(h.getHash("user:member:unread"), { [GROUP_CHAT]: 1 });
+  assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 1);
+});
+
 test("message send: media-only messages are accepted and broadcast to the friend", async () => {
   h.reset();
   seedDirectFriendship();
