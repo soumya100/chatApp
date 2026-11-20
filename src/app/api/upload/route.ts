@@ -1,4 +1,5 @@
 import { authOptions } from "@/lib/auth"
+import { db } from "@/lib/db"
 import { handleUpload } from "@vercel/blob/client"
 import { getServerSession } from "next-auth"
 
@@ -70,6 +71,20 @@ export async function POST(request: Request) {
                 }
             }
         })
+
+        if (body?.type === "blob.upload-completed") {
+            const completedUrls = new Set<string>()
+            const candidates = [body?.payload?.blob, body?.payload, ...(Array.isArray(body?.payload?.files) ? body.payload.files : [])]
+            for (const candidate of candidates) {
+                const url = candidate?.url
+                if (typeof url === "string" && url.startsWith("https://") && url.includes(".public.blob.vercel-storage.com/")) completedUrls.add(url)
+            }
+            for (const url of completedUrls) {
+                // The message-send Lua transaction removes this marker atomically
+                // when the upload is attached. Unclaimed uploads expire via cron.
+                await db.zadd("media:orphans", { score: Date.now(), member: url })
+            }
+        }
 
         return Response.json(jsonResponse)
     } catch (error) {
