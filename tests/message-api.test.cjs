@@ -500,7 +500,7 @@ test("message typing: participants broadcast, strangers are rejected", async () 
   h.reset({ session: null });
   assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT })))).status, 401);
   h.reset();
-  assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT, isTyping: "yes" })))).status, 400);
+  assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT, isTyping: "yes" })))).status, 422);
 });
 
 test("message typing: group members can broadcast typing state to the group channel", async () => {
