@@ -240,6 +240,7 @@ test("message edit: authorization boundary (unauthenticated, non-member, non-sen
 
 test("message edit: sender can edit and the edit is broadcast", async () => {
   h.reset();
+  seedDirectFriendship();
   const chatId = h.setDirectMessages([{ id: "m1", senderId: "owner", text: "hello", timestamp: 1 }]);
   const result = await status(await edit.POST(h.request({ messageId: "m1", chatId, newText: "hello edited" })));
   assert.equal(result.status, 200);
@@ -253,6 +254,7 @@ test("message edit: sender can edit and the edit is broadcast", async () => {
 
 test("message edit: system, deleted, unknown and empty-text edge cases", async () => {
   h.reset();
+  seedDirectFriendship();
   h.setDirectMessages([
     { id: "sys", senderId: "system", text: "sys", timestamp: 1 },
     { id: "gone", senderId: "owner", text: "old", timestamp: 2, isDeleted: true },
@@ -299,6 +301,7 @@ test("message delete: only the sender can delete (IDOR protected)", async () => 
 
 test("message delete: sender soft-deletes, owned attachments are removed from Blob", async () => {
   h.reset();
+  seedDirectFriendship();
   const blobUrl = "https://bucket.public.blob.vercel-storage.com/file-abc.pdf";
   const chatId = h.setDirectMessages([
     { id: "m1", senderId: "owner", text: "doc", timestamp: 1, mediaUrl: blobUrl, mediaType: "file", fileName: "f.pdf", fileSize: 9, senderImg: "/owner.png" },
@@ -319,6 +322,7 @@ test("message delete: sender soft-deletes, owned attachments are removed from Bl
 
 test("message delete: external attachments and blob outages are handled safely", async () => {
   h.reset();
+  seedDirectFriendship();
   const chatId = h.setDirectMessages([{ id: "m2", senderId: "owner", text: "external", timestamp: 3, mediaUrl: "https://evil.example.com/a.png" }]);
   const result = await status(await remove.POST(h.request({ messageId: "m2", chatId })));
   assert.equal(result.status, 200);
@@ -328,8 +332,9 @@ test("message delete: external attachments and blob outages are handled safely",
   h.setDirectMessages([{ id: "m3", senderId: "owner", text: "x", timestamp: 4, mediaUrl: "https://bucket.public.blob.vercel-storage.com/b.png" }]);
   h.setBlobFailure(true);
   const failing = await status(await remove.POST(h.request({ messageId: "m3", chatId: DIRECT })));
-  assert.equal(failing.status, 502);
-  assert.equal(h.getDirectMessages()[0].isDeleted, undefined, "message must survive when its attachment cannot be deleted");
+  assert.equal(failing.status, 200, "message deletion succeeds while failed Blob cleanup remains queued");
+  assert.equal(h.getDirectMessages()[0].isDeleted, true, "the message is tombstoned before external cleanup");
+  assert.equal(h.getZset("media:cleanup").length, 1, "failed Blob deletion remains durably retryable");
 });
 
 test("message delete: system, already-deleted and unknown messages are rejected", async () => {
