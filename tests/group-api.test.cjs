@@ -226,6 +226,38 @@ test("group features: members can create valid polls unless admin-only mode is e
   assert.equal(result.status, 403);
 });
 
+test("group feature creation persists poll, event and announcement messages in the group inbox", async () => {
+  h.reset();
+  const poll = await read(await post(features, { action: "createPoll", question: "Which roadmap?", options: ["A", "B"] }));
+  assert.equal(poll.status, 200);
+  let messages = h.getMessages();
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].featureType, "poll");
+  assert.equal(messages[0].featureId, poll.data.result.id);
+  assert.match(messages[0].text, /Which roadmap/);
+  assert.equal(messages[0].receiverId, "group--g1");
+  assert.equal(h.getHash("user:member:unread")["group--g1"], 1);
+  assert.ok(h.pusherEvents.some(event => event.event === "incoming-message" && event.payload.featureType === "poll"));
+
+  h.reset();
+  const event = await read(await post(features, { action: "createEvent", title: "Planning session", startsAt: Date.now() + 60_000 }));
+  assert.equal(event.status, 200);
+  messages = h.getMessages();
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].featureType, "event");
+  assert.equal(messages[0].featureId, event.data.result.id);
+  assert.match(messages[0].text, /Planning session/);
+
+  h.reset();
+  const announcement = await read(await post(features, { action: "announce", text: "Release is live" }));
+  assert.equal(announcement.status, 200);
+  messages = h.getMessages();
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].featureType, "announcement");
+  assert.equal(messages[0].featureId, announcement.data.result.id);
+  assert.match(messages[0].text, /Release is live/);
+});
+
 test("group features: poll votes deduplicate selections and replace a user's previous vote", async () => {
   h.reset();
   h.setSession("member");
