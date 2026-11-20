@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const messageValidator = z.object({
     id: z.string(),
+    // Correlates an optimistic client message with its durable server copy.
+    clientRequestId: z.string().min(8).max(128).optional(),
     senderId: z.string(),
     text: z.string().max(2000),
     timestamp: z.number(),
