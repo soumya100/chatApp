@@ -42,3 +42,8 @@ test("attachment preview object URLs are revoked when the user removes an attach
   assert.match(source, /URL\.revokeObjectURL\(attachment\.previewUrl\)/);
   assert.match(source, /onClick=\{removeAttachment\}/);
 });
+
+test("composer controls cannot mutate the in-flight draft during submission", () => {
+  assert.match(source, /disabled=\{isLoading\}/);
+  assert.match(source, /onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?disabled=\{isLoading\}/);
+});
