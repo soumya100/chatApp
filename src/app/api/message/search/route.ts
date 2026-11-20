@@ -1,4 +1,5 @@
 import { authOptions } from "@/lib/auth"
+import { hasCurrentChatAccess } from "@/lib/chat-access"
 import { db } from "@/lib/db"
 import { messageValidator } from "@/lib/validations/message"
 import { getServerSession } from "next-auth"
@@ -20,19 +21,7 @@ export async function GET(req: Request) {
         const params = Object.fromEntries(url.searchParams.entries())
         const { chatId, query } = searchQueryValidator.parse(params)
 
-        if (chatId.startsWith("group--")) {
-            const groupId = chatId.slice("group--".length)
-            const isMember = await db.sismember(`group:${groupId}:members`, session.user.id)
-            if (!isMember) return new Response("Forbidden", { status: 403 })
-        } else {
-            const ids = chatId.split("--")
-            if (ids.length !== 2 || !ids.includes(session.user.id)) {
-                return new Response("Forbidden", { status: 403 })
-            }
-            const friendId = ids[0] === session.user.id ? ids[1] : ids[0]
-            const isFriend = await db.sismember(`user:${session.user.id}:friends`, friendId)
-            if (!isFriend) return new Response("Forbidden", { status: 403 })
-        }
+        if (!(await hasCurrentChatAccess(db, chatId, session.user.id))) return new Response("Forbidden", { status: 403 })
 
         const rawMembers = (await db.zrange(`chat:${chatId}:messages`, 0, -1)) as unknown[]
         const results: Message[] = []
