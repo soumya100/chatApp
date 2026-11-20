@@ -520,7 +520,7 @@ test("message typing: non-members and removed direct-chat friends are rejected",
   assert.equal((await status(await typing.POST(h.request({ chatId: GROUP_CHAT })))).status, 403);
 
   h.reset();
-  h.setSet("user:owner:friends", []);
+  h.seedSet("user:owner:friends", []);
   assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT })))).status, 403);
 });
 
