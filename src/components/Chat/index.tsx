@@ -225,6 +225,8 @@ const Chat: FC<ChatProps> = ({
         mediaType: failedMsg.mediaType,
         fileName: failedMsg.fileName,
         fileSize: failedMsg.fileSize,
+        duration: failedMsg.duration,
+        replyTo: failedMsg.replyTo,
       })
 
       setMessages((prev) =>
