@@ -47,3 +47,17 @@ test("composer controls cannot mutate the in-flight draft during submission", ()
   assert.match(source, /disabled=\{isLoading\}/);
   assert.match(source, /onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?disabled=\{isLoading\}/);
 });
+
+test("Chat surfaces send failures to the composer instead of swallowing the rejected request", () => {
+  const chat = fs.readFileSync(
+    path.join(__dirname, "../src/components/Chat/index.tsx"),
+    "utf8"
+  );
+  const handler = chat.slice(
+    chat.indexOf("const handleSendMessage"),
+    chat.indexOf("// Retry sending an errored message")
+  );
+  assert.match(handler, /status: 'error'/);
+  assert.match(handler, /throw error/);
+  assert.doesNotMatch(handler, /toast\.error/);
+});
