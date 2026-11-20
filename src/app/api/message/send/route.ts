@@ -42,21 +42,23 @@ if existing then
 end
 redis.call("ZADD", KEYS[3], ARGV[1], ARGV[2])
 if ARGV[3] ~= "" then redis.call("ZADD", KEYS[4], ARGV[4], ARGV[3]) end
-for index = 5, #KEYS do redis.call("HINCRBY", KEYS[index], ARGV[5], 1) end
+redis.call("ZADD", KEYS[5], ARGV[1], ARGV[7])
+for index = 6, #KEYS do redis.call("HINCRBY", KEYS[index], ARGV[5], 1) end
 redis.call("SET", KEYS[1], ARGV[2], "EX", 86400)
 redis.call("SET", KEYS[2], ARGV[6], "EX", 86400)
 return { 1, ARGV[2] }
 `
 
-async function persistMessageOnce(options: { senderId: string; chatId: string; requestId: string; fingerprint: string; message: Message; recipientIds: string[] }) {
-    const { senderId, chatId, requestId, fingerprint, message, recipientIds } = options
+async function persistMessageOnce(options: { senderId: string; chatId: string; requestId: string; fingerprint: string; outboxRecord: string; message: Message; recipientIds: string[] }) {
+    const { senderId, chatId, requestId, fingerprint, outboxRecord, message, recipientIds } = options
     const messageKey = `chat:${chatId}:messages`
     const idempotencyKey = `message:idempotency:${senderId}:${chatId}:${requestId}`
     const fingerprintKey = `${idempotencyKey}:fingerprint`
     const serializedMessage = JSON.stringify(message)
     const expiryRaw = message.expiresAt ? JSON.stringify({ chatKey: messageKey, messageId: message.id, raw: serializedMessage }) : ""
-    const keys = [idempotencyKey, fingerprintKey, messageKey, "chat:expiring", ...recipientIds.map(memberId => `user:${memberId}:unread`)]
-    const result = await db.eval(atomicPersistMessage, keys, [String(message.timestamp), serializedMessage, expiryRaw, String(message.expiresAt || ""), chatId, fingerprint]) as [number | string, string]
+    const deliveryKey = `chat:${chatId}:delivery:outbox`
+    const keys = [idempotencyKey, fingerprintKey, messageKey, "chat:expiring", deliveryKey, ...recipientIds.map(memberId => `user:${memberId}:unread`)]
+    const result = await db.eval(atomicPersistMessage, keys, [String(message.timestamp), serializedMessage, expiryRaw, String(message.expiresAt || ""), chatId, fingerprint, outboxRecord]) as [number | string, string]
     return { created: Number(result[0]) === 1, conflict: Number(result[0]) === -1, message: JSON.parse(result[1]) as Message }
 }
 
@@ -154,20 +156,26 @@ export async function POST(req: Request) {
 
             const allMembers = (await db.smembers(`group:${groupId}:members`)) as string[]
             const recipientMembers = allMembers.filter((memberId) => memberId !== session.user.id)
+            const pusherMessage = { ...message, senderImg: senderPreferences.hideProfilePhoto || message.senderImg?.startsWith('data:') || (message.senderImg?.length || 0) > 2048 ? undefined : message.senderImg }
+            const deliveryKey = `chat:${chatId}:delivery:outbox`
+            const deliveryRecord = JSON.stringify({ event: 'incoming-message', payload: pusherMessage })
             operation = 'persist group message atomically'
-            const persisted = await persistMessageOnce({ senderId: session.user.id, chatId, requestId, fingerprint, message, recipientIds: recipientMembers })
+            const persisted = await persistMessageOnce({ senderId: session.user.id, chatId, requestId, fingerprint, outboxRecord: deliveryRecord, message, recipientIds: recipientMembers })
             if (persisted.conflict) return new Response("Idempotency key was already used with a different message payload", { status: 409 })
             if (persisted.conflict) return new Response("Idempotency key was already used with a different message payload", { status: 409 })
         if (!persisted.created) return Response.json(persisted.message)
 
-            // Broadcast after persistence. Pusher payloads must stay small: profile images
-            // may be stored as data URLs and exceed Pusher's event-size limit.
+            // The outbox record was committed with the message. Remove it only
+            // after Pusher confirms acceptance; reconnect history retries failures.
             operation = 'broadcast group message'
-            const pusherMessage = { ...message, senderImg: senderPreferences.hideProfilePhoto || message.senderImg?.startsWith('data:') || (message.senderImg?.length || 0) > 2048 ? undefined : message.senderImg }
-            const broadcastResults = await Promise.allSettled([
+            const broadcastResult = await Promise.allSettled([
                 pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), 'incoming-message', pusherMessage)
             ])
-            broadcastResults.forEach(result => { if (result.status === 'rejected') console.error('Pusher group message broadcast failed:', result.reason) })
+            if (broadcastResult[0].status === 'fulfilled') {
+                await db.zrem(deliveryKey, deliveryRecord)
+            } else {
+                console.error('Pusher group message broadcast deferred to outbox retry:', broadcastResult[0].reason)
+            }
 
             // Notify members; unread counters were committed atomically above.
             operation = 'notify group members'
@@ -238,18 +246,20 @@ export async function POST(req: Request) {
         }
 
         const message = messageValidator.parse(messageData)
-
-        operation = 'persist direct message atomically'
-        const persisted = await persistMessageOnce({ senderId: session.user.id, chatId, requestId, fingerprint, message, recipientIds: [friendId] })
-        if (!persisted.created) return Response.json(persisted.message)
-
-        // Realtime delivery is best-effort: Pusher can reject oversized events (413).
-        // A Pusher failure must not make an already-persisted message look unsent.
-        operation = 'broadcast direct message'
         const pusherMessage = {
             ...message,
             senderImg: parsedSender?.image?.startsWith('data:') || (parsedSender?.image?.length || 0) > 2048 ? undefined : parsedSender?.image
         }
+        const deliveryKey = `chat:${chatId}:delivery:outbox`
+        const deliveryRecord = JSON.stringify({ event: 'incoming-message', payload: pusherMessage })
+
+        operation = 'persist direct message atomically'
+        const persisted = await persistMessageOnce({ senderId: session.user.id, chatId, requestId, fingerprint, outboxRecord: deliveryRecord, message, recipientIds: [friendId] })
+        if (!persisted.created) return Response.json(persisted.message)
+
+        // Realtime delivery is durable: the chat event is removed from the
+        // outbox only after Pusher accepts it. History reconnect retries it.
+        operation = 'broadcast direct message'
         const broadcastResults = await Promise.allSettled([
             pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), 'incoming-message', pusherMessage),
             pusherServer.trigger(toPusherKey(`private-user:${friendId}:chats`), 'new_message', {
@@ -257,7 +267,9 @@ export async function POST(req: Request) {
                 senderName: parsedSender?.name
             })
         ])
-        broadcastResults.forEach(result => { if (result.status === 'rejected') console.error('Pusher direct message broadcast failed:', result.reason) })
+        if (broadcastResults[0].status === 'fulfilled') await db.zrem(deliveryKey, deliveryRecord)
+        else console.error('Pusher direct chat delivery deferred to outbox retry:', broadcastResults[0].reason)
+        if (broadcastResults[1].status === 'rejected') console.error('Pusher direct chat-list notification failed:', broadcastResults[1].reason)
 
         return Response.json(message)
     } catch (error) {
