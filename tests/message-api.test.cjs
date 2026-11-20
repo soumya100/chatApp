@@ -489,6 +489,7 @@ test("message search: authorization and bounds", async () => {
 // ------------------------------------------------------------ message typing
 test("message typing: participants broadcast, strangers are rejected", async () => {
   h.reset();
+  seedDirectFriendship();
   const ok = await status(await typing.POST(h.request({ chatId: DIRECT, isTyping: true })));
   assert.equal(ok.status, 200);
   const event = h.pusherEvents.find(item => item.event === "user_typing");
