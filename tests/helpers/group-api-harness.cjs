@@ -403,6 +403,17 @@ const db = {
         state.events.unshift(payload);
         state.events = state.events.slice(0, 100);
         result = payload;
+      } else if (action === "voteEvent") {
+        const event = state.events.find(item => item.id === payload.eventId);
+        if (!event) return JSON.stringify({ error: "Event not found" });
+        if (!Array.isArray(event.timeOptions) || event.timeOptions.length === 0) return JSON.stringify({ error: "This event has no time poll" });
+        const selected = [...new Set(payload.optionIds)];
+        if (selected.some(id => !event.timeOptions.some(option => option.id === id))) return JSON.stringify({ error: "Invalid event time selection" });
+        for (const option of event.timeOptions) {
+          option.votes = (option.votes || []).filter(id => id !== userId);
+          if (selected.includes(option.id)) option.votes.push(userId);
+        }
+        result = event;
       } else if (action === "respondEvent") {
         const event = state.events.find(item => item.id === payload.eventId);
         if (!event) return JSON.stringify({ error: "Event not found" });
