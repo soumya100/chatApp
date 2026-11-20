@@ -164,7 +164,7 @@ test("member invitations enforce explicit admin-approval and disabled-invite pol
 test("global controls use accessible premium checkbox and radio styling", () => {
   const styles = read("src/app/globals.css");
   assert.match(styles, /input\[type="checkbox"\][\s\S]*input\[type="radio"\]/);
-  assert.match(styles, /:checked::before/);
+  assert.match(styles, /input\[type="checkbox"\]:checked\s*\{[\s\S]*background-image:/);
   assert.match(styles, /:focus-visible/);
   assert.match(styles, /:disabled/);
   assert.match(styles, /html\.dark input\[type="checkbox"\]/);
