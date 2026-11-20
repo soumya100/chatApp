@@ -374,16 +374,22 @@ const db = {
     if (scriptRaceHook) scriptRaceHook(script, keys, args);
     if (script.includes("chat-message-idempotency-v1")) {
       const existing = readRaw(keys[0]);
-      if (existing) return [0, existing];
-      zadd(keys[1], { score: Number(args[0]), member: args[1] });
-      if (args[2]) zadd(keys[2], { score: Number(args[3]), member: args[2] });
-      for (let index = 3; index < keys.length; index += 1) {
+      if (existing) {
+        const previousFingerprint = readRaw(keys[1]);
+        if (previousFingerprint && previousFingerprint !== args[5]) return [-1, existing];
+        return [0, existing];
+      }
+      zadd(keys[2], { score: Number(args[0]), member: args[1] });
+      if (args[2]) zadd(keys[3], { score: Number(args[3]), member: args[2] });
+      for (let index = 4; index < keys.length; index += 1) {
         const fields = hashFields(keys[index]);
         fields[args[4]] = Number(fields[args[4]] || 0) + 1;
         hashes.set(keys[index], fields);
       }
       writeRaw(keys[0], args[1]);
+      writeRaw(keys[1], args[5]);
       applyExpire(keys[0], 86400);
+      applyExpire(keys[1], 86400);
       return [1, args[1]];
     }
     if (script.includes(LUA_FEATURES_SCRIPT_MARKER)) {
