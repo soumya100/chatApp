@@ -31,6 +31,14 @@ test("failed message requests preserve attachment and reply context", () => {
     "reply context must remain available until send success");
 });
 
+test("unchanged composer retries reuse a stable request ID", () => {
+  assert.match(source, /const \[pendingRequestId, setPendingRequestId\] = useState<string \| null>\(null\)/);
+  assert.match(source, /const requestId = pendingRequestId \|\| nanoid\(\)/);
+  assert.match(source, /await onSendMessage\(trimmed, mediaPayload, requestId\)/);
+  assert.match(source, /requestId,\s*\n\s*\}\)/);
+  assert.match(source, /if \(pendingRequestId\) setPendingRequestId\(null\)/);
+});
+
 test("chat composer exposes an accessible sending state and prevents duplicate submits", () => {
   assert.match(source, /aria-busy=\{isLoading\}/);
   assert.match(source, /role='status' aria-live='polite'/);
