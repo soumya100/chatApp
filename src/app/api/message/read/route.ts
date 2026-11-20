@@ -35,10 +35,18 @@ export async function POST(req: Request) {
             await db.hdel(`user:${session.user.id}:unread`, chatId)
         }
 
-        await pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), 'messages_seen', {
-            readerId: session.user.id,
-            seenAt: Date.now()
-        })
+        // Clearing unread state is the durable operation. Realtime read-receipt
+        // delivery is best-effort: a Pusher outage must not make a successful
+        // read appear to have failed and encourage unsafe client retries.
+        const broadcast = await Promise.allSettled([
+            pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), 'messages_seen', {
+                readerId: session.user.id,
+                seenAt: Date.now()
+            })
+        ])
+        if (broadcast[0].status === "rejected") {
+            console.error("[message/read] Read receipt broadcast failed:", broadcast[0].reason)
+        }
 
         return new Response('OK')
     } catch (error) {
