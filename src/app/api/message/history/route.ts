@@ -3,6 +3,8 @@ import { hasCurrentChatAccess } from "@/lib/chat-access"
 import { db } from "@/lib/db"
 import { groupPreferencesKey, parseStoredGroupPreferences } from "@/lib/group-preferences"
 import { messageValidator } from "@/lib/validations/message"
+import { pusherServer } from "@/lib/pusher"
+import { toPusherKey } from "@/lib/utils"
 import { getServerSession } from "next-auth"
 import { z } from "zod"
 
@@ -24,6 +26,24 @@ export async function GET(req: Request) {
         const { chatId, cursor, limit } = historyQueryValidator.parse(params)
 
         if (!(await hasCurrentChatAccess(db, chatId, session.user.id))) return new Response("Forbidden", { status: 403 })
+
+        // A message and its outbox event are persisted atomically. If the
+        // original Pusher publish failed, any authorized history reconnect
+        // retries pending chat events and acknowledges only successful sends.
+        const deliveryKey = `chat:${chatId}:delivery:outbox`
+        const pendingDeliveries = await db.zrange(deliveryKey, 0, 19) as unknown[]
+        for (const raw of pendingDeliveries) {
+            const serialized = typeof raw === "string" ? raw : JSON.stringify(raw)
+            try {
+                const delivery = JSON.parse(serialized) as { event: string; payload: unknown }
+                if (delivery.event !== "incoming-message" || !delivery.payload) continue
+                await pusherServer.trigger(toPusherKey(`private-chat:${chatId}`), delivery.event, delivery.payload)
+                await db.zrem(deliveryKey, serialized)
+            } catch (deliveryError) {
+                // Keep failed events in Redis; the next reconnect/history fetch retries.
+                console.error("[message/history] Pending realtime delivery retained for retry:", deliveryError)
+            }
+        }
 
         let rawMessages: unknown[] = []
 
