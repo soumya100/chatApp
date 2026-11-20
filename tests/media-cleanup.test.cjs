@@ -55,7 +55,7 @@ test("media cleanup: retries deleted-message jobs and aged abandoned uploads", a
   const orphanUrl = "https://bucket.public.blob.vercel-storage.com/abandoned.pdf";
   const cleanupRecord = JSON.stringify({ url: deletedUrl, queuedAt: Date.now() });
   await h.db.zadd("media:cleanup", { score: Date.now(), member: cleanupRecord });
-  await h.db.zadd("media:orphans", { score: Date.now() - 25 * 60 * 60 * 1000, member: orphanUrl });
+  await h.db.zadd("media:orphans", { score: Date.now() - 8 * 24 * 60 * 60 * 1000, member: orphanUrl });
 
   const result = await responseData(await cleanup.GET(new Request("http://localhost/api/maintenance/media-cleanup", {
     headers: { authorization: "Bearer test-cron-secret" },
