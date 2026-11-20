@@ -6,6 +6,7 @@ const cleanup = h.loadRoute("src/app/api/maintenance/media-cleanup/route.ts");
 const upload = h.loadRoute("src/app/api/upload/route.ts");
 const send = h.loadRoute("src/app/api/message/send/route.ts");
 const expiryCleanup = h.loadRoute("src/app/api/cron/cleanup-expired-messages/route.ts");
+const redisHealth = h.loadRoute("src/app/api/health/redis/route.ts");
 
 const oldSecret = process.env.CRON_SECRET;
 process.env.CRON_SECRET = "test-cron-secret";
@@ -36,6 +37,21 @@ test("expiry cleanup: rejects forged Blob hostnames without calling Blob deletio
     if (oldSecret === undefined) delete process.env.CRON_SECRET;
     else process.env.CRON_SECRET = oldSecret;
   }
+});
+
+
+test("Redis health probe requires the cron secret and reports only aggregate queue state", async () => {
+  h.reset();
+  const unauthorized = await redisHealth.GET(new Request("http://localhost/api/health/redis"));
+  assert.equal(unauthorized.status, 401);
+  const result = await responseData(await redisHealth.GET(new Request("http://localhost/api/health/redis", {
+    headers: { authorization: "Bearer test-cron-secret" },
+  })));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.status, "ok");
+  assert.equal(result.data.redis, "reachable");
+  assert.deepEqual(result.data.queues, { expiry: 0, mediaCleanup: 0, mediaOrphans: 0 });
+  assert.equal(JSON.stringify(result.data).includes("owner"), false);
 });
 
 test("media cleanup: scheduled endpoint rejects unauthenticated callers", async () => {
