@@ -153,15 +153,14 @@ const Chat: FC<ChatProps> = ({
           const restored = queued
             .filter(record => !known.has(record.id))
             .map(record => ({
+              ...record.payload,
               id: record.id,
               clientRequestId: record.id,
               senderId: sessionId,
               receiverId: chatPartner.id,
-              text: record.payload.text,
               timestamp: record.createdAt,
               status: 'queued' as const,
               isSeen: false,
-              ...record.payload,
             } as Message))
           return [...restored, ...previous]
         })
