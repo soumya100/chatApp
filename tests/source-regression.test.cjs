@@ -224,7 +224,7 @@ test("offline messaging persists requests in IndexedDB and replays them with sta
 
 test("upload endpoint applies a per-user quota before minting Blob upload tokens", () => {
   const source = read("src/app/api/upload/route.ts");
-  assert.match(source, /rateLimit\(session\.user\.id, "blob_upload", \{ limit: 20, windowSeconds: 60 \* 60 \}\)/);
+  assert.match(source, /rateLimit\(session\.user\.id, "blob_upload", \{ limit: 10, windowSeconds: 60 \* 60 \}\)/);
   assert.match(source, /UPLOAD_RATE_LIMITED/);
   assert.match(source, /status: message === "Unauthorized" \? 401 : message === "UPLOAD_RATE_LIMITED" \? 429 : 400/);
 });
