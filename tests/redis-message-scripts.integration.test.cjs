@@ -50,6 +50,26 @@ async function rows(key) {
 
 const CHAT = "chat:test-direct:messages";
 
+test("Redis Lua integration: message send is idempotent and increments unread once", { skip: !enabled }, async () => {
+  const script = lua("src/app/api/message/send/route.ts", "atomicPersistMessage");
+  await redis(["FLUSHDB"]);
+  const idempotencyKey = "message:idempotency:owner:owner--member:req-1";
+  const unreadKey = "user:member:unread";
+  const message = seedMessage("server-message-1");
+  const args = ["1000", message, "", "", "owner--member"];
+  const keys = [idempotencyKey, CHAT, "chat:expiring", unreadKey];
+
+  const first = await evalLua(script, keys, args);
+  const retry = await evalLua(script, keys, args);
+  assert.equal(Number(first[0]), 1, "first send creates the message");
+  assert.equal(Number(retry[0]), 0, "retry returns the previously stored message");
+  assert.equal(JSON.parse(first[1]).id, "server-message-1");
+  assert.equal(JSON.parse(retry[1]).id, "server-message-1");
+  assert.equal((await rows(CHAT)).length, 1);
+  assert.equal(Number(await redis(["HGET", unreadKey, "owner--member"])), 1);
+  assert.ok(Number(await redis(["TTL", idempotencyKey])) > 0);
+});
+
 test("Redis Lua integration: message edit rejects stale senders and applies only owned edits", { skip: !enabled }, async () => {
   const script = lua("src/app/api/message/edit/route.ts", "atomicEdit");
   await redis(["FLUSHDB"]);
