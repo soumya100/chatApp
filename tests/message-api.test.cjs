@@ -59,6 +59,7 @@ test("message send: direct happy path persists first, then broadcasts and counts
   assert.equal(typeof stored[0].clientRequestId, "string", "server-generated IDs preserve compatibility with older clients");
   assert.deepEqual(h.getHash("user:member:unread"), { [DIRECT]: 1 });
   assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 0, "failed broadcast must not be recorded as delivered");
+  assert.equal(h.getZset(`chat:${DIRECT}:delivery:outbox`).length, 1, "failed delivery must remain in the durable outbox");
   assert.deepEqual(h.getHash("user:owner:unread"), {});
 });
 
@@ -75,6 +76,17 @@ test("message send: retries with the same requestId persist and count a direct m
   assert.equal(h.getDirectMessages().length, 1);
   assert.deepEqual(h.getHash("user:member:unread"), { [DIRECT]: 1 });
   assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 1);
+});
+
+test("message send: reusing a requestId with a different payload returns 409", async () => {
+  h.reset();
+  seedDirectFriendship();
+  const original = { chatId: DIRECT, text: "original payload", requestId: "request-payload-collision-01" };
+  assert.equal((await status(await send.POST(h.request(original)))).status, 200);
+  const collision = await status(await send.POST(h.request({ ...original, text: "changed payload" })));
+  assert.equal(collision.status, 409);
+  assert.equal(h.getDirectMessages().length, 1);
+  assert.equal(h.getDirectMessages()[0].text, "original payload");
 });
 
 test("message send: retries with the same requestId do not duplicate group unread counts", async () => {
@@ -339,6 +351,7 @@ test("message delete: external attachments and blob outages are handled safely",
 
 test("message delete: system, already-deleted and unknown messages are rejected", async () => {
   h.reset();
+  seedDirectFriendship();
   h.setDirectMessages([
     { id: "sys", senderId: "system", text: "sys", timestamp: 1 },
     { id: "gone", senderId: "owner", text: "old", timestamp: 2, isDeleted: true },
@@ -471,6 +484,21 @@ test("message history: latest page, ordering and cursor contract", async () => {
   assert.deepEqual(last.data.messages.map(message => message.id), ["m1"]);
   assert.equal(last.data.hasMore, false);
   assert.equal(last.data.nextCursor, 1000);
+});
+
+test("message history: reconnect retries pending Pusher delivery and acknowledges it", async () => {
+  h.reset();
+  seedDirectFriendship();
+  h.setPusherFailure(true);
+  const sent = await status(await send.POST(h.request({ chatId: DIRECT, text: "deliver after reconnect", requestId: "request-outbox-retry-01" })));
+  assert.equal(sent.status, 200);
+  const key = `chat:${DIRECT}:delivery:outbox`;
+  assert.equal(h.getZset(key).length, 1);
+  h.setPusherFailure(false);
+  const historyPage = await status(await history.GET(h.request(undefined, "GET", `http://localhost/api/message/history?chatId=${DIRECT}&limit=10`)));
+  assert.equal(historyPage.status, 200);
+  assert.equal(h.pusherEvents.filter(event => event.event === "incoming-message").length, 1);
+  assert.equal(h.getZset(key).length, 0, "successful retry acknowledges the outbox item");
 });
 
 test("message history: expired messages are hidden but pagination still advances", async () => {
