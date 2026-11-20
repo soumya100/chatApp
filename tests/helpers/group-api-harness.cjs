@@ -372,6 +372,16 @@ const db = {
   async zrange(key, start, end, options) { return zrange(key, start, end, options); },
   async eval(script, keys, args) {
     if (scriptRaceHook) scriptRaceHook(script, keys, args);
+    if (script.includes("sliding-window-rate-limit-v1")) {
+      const now = Number(args[0]);
+      const windowMs = Number(args[1]);
+      const limit = Number(args[2]);
+      zremrangebyscore(keys[0], "-inf", now - windowMs);
+      zadd(keys[0], { score: now, member: args[3] });
+      const count = zcard(keys[0]);
+      applyExpire(keys[0], Math.max(1, Math.ceil((windowMs * 2) / 1000)));
+      return [count, count <= limit ? 1 : 0];
+    }
     if (script.includes("chat-message-idempotency-v1")) {
       const existing = readRaw(keys[0]);
       if (existing) {
