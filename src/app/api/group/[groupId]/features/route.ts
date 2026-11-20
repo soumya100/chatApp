@@ -101,7 +101,7 @@ if ARGV[4] and ARGV[4] ~= "" then
   local message = cjson.decode(ARGV[4])
   redis.call("ZADD", KEYS[2], message.timestamp, ARGV[4])
   if message.expiresAt then
-    redis.call("ZADD", KEYS[3], message.expiresAt, cjson.encode({chatKey = "chat:group--" .. string.match(KEYS[2], "^chat:group%-%-(.+):messages$"), messageId = message.id, raw = ARGV[4]}))
+    redis.call("ZADD", KEYS[3], message.expiresAt, cjson.encode({chatKey = KEYS[2], messageId = message.id, raw = ARGV[4]}))
   end
 end
 
