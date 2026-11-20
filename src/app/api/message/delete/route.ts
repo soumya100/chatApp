@@ -19,7 +19,7 @@ function isOwnedVercelBlob(url: string) {
             && !parsed.username
             && !parsed.password
             && !parsed.port
-            && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.public\\.blob\\.vercel-storage\\.com$/i.test(parsed.hostname)
+            && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.public\.blob\.vercel-storage\.com$/i.test(parsed.hostname)
             && parsed.pathname.length > 1
             && !parsed.search
             && !parsed.hash
