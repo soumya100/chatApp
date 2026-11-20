@@ -85,7 +85,7 @@ export async function POST(request: Request) {
 
                 // Limit token creation per authenticated user to stop upload
                 // endpoint abuse before a Blob token is minted.
-                const quota = await rateLimit(session.user.id, "blob_upload", { limit: 20, windowSeconds: 60 * 60 })
+                const quota = await rateLimit(session.user.id, "blob_upload", { limit: 10, windowSeconds: 60 * 60 })
                 if (!quota.success) throw new Error("UPLOAD_RATE_LIMITED")
 
                 return {
