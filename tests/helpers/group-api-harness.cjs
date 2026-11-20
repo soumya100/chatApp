@@ -372,6 +372,20 @@ const db = {
   async zrange(key, start, end, options) { return zrange(key, start, end, options); },
   async eval(script, keys, args) {
     if (scriptRaceHook) scriptRaceHook(script, keys, args);
+    if (script.includes("chat-message-idempotency-v1")) {
+      const existing = readRaw(keys[0]);
+      if (existing) return [0, existing];
+      zadd(keys[1], { score: Number(args[0]), member: args[1] });
+      if (args[2]) zadd(keys[2], { score: Number(args[3]), member: args[2] });
+      for (let index = 3; index < keys.length; index += 1) {
+        const fields = hashFields(keys[index]);
+        fields[args[4]] = Number(fields[args[4]] || 0) + 1;
+        hashes.set(keys[index], fields);
+      }
+      writeRaw(keys[0], args[1]);
+      applyExpire(keys[0], 86400);
+      return [1, args[1]];
+    }
     if (script.includes(LUA_FEATURES_SCRIPT_MARKER)) {
       const groupId = keys[0].slice("group:".length, -":features".length);
       const userId = args[0];
