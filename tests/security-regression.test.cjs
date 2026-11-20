@@ -182,6 +182,15 @@ test("registration stores a password hash and applies server-side validation", (
   assert.doesNotMatch(registration, /db\.set\([^\n]*password\s*[,)]/);
 });
 
+test("text sanitization removes nested HTML tags to a fixed point", () => {
+  const authPath = path.join(root, "src/lib/validations/auth.ts");
+  const source = fs.readFileSync(authPath, "utf8");
+  assert.match(source, /let previous\s*:/);
+  assert.match(source, /previous\s*=\s*sanitized/);
+  assert.match(source, /sanitized\s*=\s*sanitized\.replace\(\/<\[\^>\]\*>\?\/gm,\s*""\)/);
+  assert.match(source, /\}\s*while\s*\(sanitized\s*!==\s*previous\)/);
+});
+
 test("dangerous raw HTML injection is not introduced in app components", () => {
   const sourceRoot = path.join(root, "src");
   const files = [];
