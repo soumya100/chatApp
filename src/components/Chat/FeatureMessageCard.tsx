@@ -84,6 +84,17 @@ const FeatureMessageCard: FC<Props> = ({ groupId, featureType, featureId }) => {
     <p className="text-sm font-semibold">{event.title}</p>
     <p className="mt-1 flex items-center gap-1.5 text-xs opacity-75"><Clock3 size={12}/>{new Date(event.startsAt).toLocaleString()}</p>
     {event.description && <p className="mt-2 whitespace-pre-wrap text-xs opacity-80">{event.description}</p>}
+    {event.timeOptions?.length > 0 && <div className="mt-3 space-y-1.5">
+      <p className="text-[11px] font-semibold opacity-80">Vote for a time</p>
+      {event.timeOptions.map((option: any) => {
+        const chosen = (selected.length ? selected : event.myOptionIds || []).includes(option.id)
+        return <label key={option.id} className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-white/15 bg-white/5 px-2.5 py-2 text-xs">
+          <span className="flex items-center gap-2"><input type="checkbox" checked={chosen} disabled={busy} onChange={e => setSelected(current => e.target.checked ? [...(current.length ? current : event.myOptionIds || []), option.id] : (current.length ? current : event.myOptionIds || []).filter(id => id !== option.id))}/>{new Date(option.startsAt).toLocaleString()}</span>
+          <span className="opacity-65">{option.votes?.length || 0} votes</span>
+        </label>
+      })}
+      <button type="button" disabled={busy || !(selected.length ? selected : event.myOptionIds || []).length} onClick={() => void act({ action: "voteEvent", eventId: event.id, optionIds: selected.length ? selected : event.myOptionIds || [] })} className="rounded-lg bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40">{busy ? "Saving…" : "Submit time vote"}</button>
+    </div>}
     <div className="mt-3 flex flex-wrap gap-1.5">{(["going", "maybe", "not-going"] as const).map(value => <button type="button" key={value} disabled={busy} onClick={() => void act({ action: "respondEvent", eventId: event.id, response: value })} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium capitalize transition ${response === value ? "border-sky-300 bg-sky-500/20" : "border-white/15 bg-white/5 hover:bg-white/10"}`}>{value.replace("-", " ")}</button>)}</div>
     <p className="mt-2 text-[10px] opacity-65">{event.responses?.going?.length || 0} going · {event.responses?.maybe?.length || 0} maybe</p>
     {error && <p className="mt-1 text-[10px] text-rose-300">{error}</p>}
