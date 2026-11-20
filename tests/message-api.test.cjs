@@ -503,9 +503,29 @@ test("message typing: participants broadcast, strangers are rejected", async () 
   assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT, isTyping: "yes" })))).status, 400);
 });
 
-test("message typing: group chat ids are currently rejected (existing behavior)", async () => {
+test("message typing: group members can broadcast typing state to the group channel", async () => {
   h.reset();
-  // The typing route only understands direct `a--b` chat ids today; group typing
-  // is handled client-side. This pins the current contract.
-  assert.equal((await status(await typing.POST(h.request({ chatId: GROUP_CHAT })))).status, 401);
+  seedGroupChat();
+  const response = await status(await typing.POST(h.request({ chatId: GROUP_CHAT, isTyping: true })));
+  assert.equal(response.status, 200);
+  const event = h.pusherEvents.find(item => item.event === "user_typing");
+  assert.equal(event.channel, `private-chat:${GROUP_CHAT}`);
+  assert.deepEqual(event.payload, { userId: "owner", isTyping: true });
+});
+
+test("message typing: non-members and removed direct-chat friends are rejected", async () => {
+  h.reset();
+  seedGroupChat();
+  h.setSession("outsider");
+  assert.equal((await status(await typing.POST(h.request({ chatId: GROUP_CHAT })))).status, 403);
+
+  h.reset();
+  h.setSet("user:owner:friends", []);
+  assert.equal((await status(await typing.POST(h.request({ chatId: DIRECT })))).status, 403);
+});
+
+test("message typing: malformed JSON and invalid chat identifiers fail safely", async () => {
+  h.reset();
+  assert.equal((await status(await typing.POST(h.requestRaw("{invalid")))).status, 400);
+  assert.equal((await status(await typing.POST(h.request({ chatId: "" })))).status, 422);
 });
