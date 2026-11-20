@@ -14,7 +14,8 @@ export const dynamic = "force-dynamic"
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("createPoll"), question: z.string().trim().min(3).max(240), options: z.array(z.string().trim().min(1).max(100)).min(2).max(10), multiple: z.boolean().default(false) }),
   z.object({ action: z.literal("votePoll"), pollId: z.string().min(1), optionIds: z.array(z.string().min(1)).min(1).max(10) }),
-  z.object({ action: z.literal("createEvent"), title: z.string().trim().min(3).max(120), description: z.string().max(1000).optional(), startsAt: z.number().int().positive(), location: z.string().max(200).optional() }),
+  z.object({ action: z.literal("createEvent"), title: z.string().trim().min(3).max(120), description: z.string().max(1000).optional(), startsAt: z.number().int().positive(), timeOptions: z.array(z.number().int().positive()).min(2).max(6).optional(), location: z.string().max(200).optional() }),
+  z.object({ action: z.literal("voteEvent"), eventId: z.string().min(1), optionIds: z.array(z.string().min(1)).min(1).max(6) }),
   z.object({ action: z.literal("respondEvent"), eventId: z.string().min(1), response: z.enum(["going", "maybe", "not-going"]) }),
   z.object({ action: z.literal("announce"), text: z.string().trim().min(1).max(2000) })
 ])
@@ -73,6 +74,24 @@ elseif action == "respondEvent" then
     for i = #event.responses[status], 1, -1 do if event.responses[status][i] == userId then table.remove(event.responses[status], i) end end
   end
   table.insert(event.responses[payload.response], userId)
+  result = event
+elseif action == "voteEvent" then
+  local event = nil
+  for _, item in ipairs(features.events) do if item.id == payload.eventId then event = item break end end
+  if not event then return cjson.encode({error = "Event not found"}) end
+  if not event.timeOptions or #event.timeOptions == 0 then return cjson.encode({error = "This event has no time poll"}) end
+  local selected = {}
+  for _, id in ipairs(payload.optionIds) do
+    local found = false
+    for _, option in ipairs(event.timeOptions) do if option.id == id then found = true break end end
+    if not found then return cjson.encode({error = "Invalid event time selection"}) end
+    selected[id] = true
+  end
+  for _, option in ipairs(event.timeOptions) do
+    option.votes = option.votes or cjson.decode("[]")
+    for i = #option.votes, 1, -1 do if option.votes[i] == userId then table.remove(option.votes, i) end end
+    if selected[option.id] then table.insert(option.votes, userId) end
+  end
   result = event
 elseif action == "announce" then
   table.insert(features.announcements, 1, payload)
@@ -144,13 +163,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
     if (parsed.data.action === "createPoll") {
       payload = { id: nanoid(), question: parsed.data.question, options: parsed.data.options.map(label => ({ id: nanoid(), label, votes: [] })), multiple: parsed.data.multiple, createdBy: userId, createdAt: now, closed: false }
     } else if (parsed.data.action === "createEvent") {
-      if (parsed.data.startsAt < now) return Response.json({ message: "Event must be in the future" }, { status: 400 })
-      const { action: _action, ...eventData } = parsed.data
-      payload = { id: nanoid(), ...eventData, createdBy: userId, createdAt: now, responses: { going: [], maybe: [], "not-going": [] } }
+      if (parsed.data.startsAt < now || (parsed.data.timeOptions || []).some(time => time < now)) return Response.json({ message: "Event times must be in the future" }, { status: 400 })
+      const { action: _action, timeOptions, ...eventData } = parsed.data
+      payload = { id: nanoid(), ...eventData, timeOptions: (timeOptions || []).map(startsAt => ({ id: nanoid(), startsAt, votes: [] })), createdBy: userId, createdAt: now, responses: { going: [], maybe: [], "not-going": [] } }
     } else if (parsed.data.action === "announce") {
       payload = { id: nanoid(), text: parsed.data.text, createdBy: userId, createdAt: now }
     } else if (parsed.data.action === "votePoll") {
       payload = { pollId: parsed.data.pollId, optionIds: Array.from(new Set(parsed.data.optionIds)) }
+    } else if (parsed.data.action === "voteEvent") {
+      payload = { eventId: parsed.data.eventId, optionIds: Array.from(new Set(parsed.data.optionIds)) }
     } else {
       payload = { eventId: parsed.data.eventId, response: parsed.data.response }
     }
@@ -225,6 +246,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
     features.polls = (features.polls || []).map((poll: any) => ({
       ...poll,
       myOptionIds: (poll.options || []).filter((option: any) => (option.votes || []).includes(userId)).map((option: any) => option.id)
+    }))
+    features.events = (features.events || []).map((event: any) => ({
+      ...event,
+      myOptionIds: (event.timeOptions || []).filter((option: any) => (option.votes || []).includes(userId)).map((option: any) => option.id),
+      myResponse: ["going", "maybe", "not-going"].find(status => (event.responses?.[status] || []).includes(userId)) || null
     }))
     return Response.json({ features })
   } catch (error) {
