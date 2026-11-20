@@ -1,0 +1,71 @@
+name: Authenticated staging security and soak validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      soak_seconds:
+        description: "Controlled staging soak duration (30–600 seconds)"
+        required: true
+        default: "180"
+        type: string
+      confirm_staging:
+        description: "Type staging-only to confirm this is an isolated staging deployment"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chatapp-staging-validation
+  cancel-in-progress: false
+
+jobs:
+  authenticated-staging-validation:
+    name: Authenticated authorization and reliability checks
+    if: inputs.confirm_staging == 'staging-only'
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 20
+    env:
+      CHATAPP_STAGING_URL: ${{ vars.CHATAPP_STAGING_URL }}
+      CHATAPP_STAGING_CONFIRMATION: ${{ inputs.confirm_staging }}
+      CHATAPP_TEST_GROUP_ID: ${{ vars.CHATAPP_TEST_GROUP_ID }}
+      CHATAPP_TEST_ADMIN_EMAIL: ${{ secrets.CHATAPP_TEST_ADMIN_EMAIL }}
+      CHATAPP_TEST_ADMIN_PASSWORD: ${{ secrets.CHATAPP_TEST_ADMIN_PASSWORD }}
+      CHATAPP_TEST_MEMBER_EMAIL: ${{ secrets.CHATAPP_TEST_MEMBER_EMAIL }}
+      CHATAPP_TEST_MEMBER_PASSWORD: ${{ secrets.CHATAPP_TEST_MEMBER_PASSWORD }}
+      CHATAPP_TEST_OUTSIDER_EMAIL: ${{ secrets.CHATAPP_TEST_OUTSIDER_EMAIL }}
+      CHATAPP_TEST_OUTSIDER_PASSWORD: ${{ secrets.CHATAPP_TEST_OUTSIDER_PASSWORD }}
+      CHATAPP_SOAK_SECONDS: ${{ inputs.soak_seconds }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Validate staging configuration without printing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CHATAPP_STAGING_URL"
+          test -n "$CHATAPP_TEST_GROUP_ID"
+          test -n "$CHATAPP_TEST_ADMIN_EMAIL"
+          test -n "$CHATAPP_TEST_ADMIN_PASSWORD"
+          test -n "$CHATAPP_TEST_MEMBER_EMAIL"
+          test -n "$CHATAPP_TEST_MEMBER_PASSWORD"
+          test -n "$CHATAPP_TEST_OUTSIDER_EMAIL"
+          test -n "$CHATAPP_TEST_OUTSIDER_PASSWORD"
+          echo "Staging URL and three role-specific test accounts are configured."
+
+      - name: Install locked dependencies
+        run: |
+          corepack prepare yarn@1.22.22 --activate
+          yarn install --frozen-lockfile --non-interactive
+
+      - name: Run authenticated authorization, session and soak checks
+        run: node scripts/staging-validation.cjs
