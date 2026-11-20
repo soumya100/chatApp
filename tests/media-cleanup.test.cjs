@@ -5,6 +5,7 @@ const h = require("./helpers/group-api-harness.cjs");
 const cleanup = h.loadRoute("src/app/api/maintenance/media-cleanup/route.ts");
 const upload = h.loadRoute("src/app/api/upload/route.ts");
 const send = h.loadRoute("src/app/api/message/send/route.ts");
+const expiryCleanup = h.loadRoute("src/app/api/cron/cleanup-expired-messages/route.ts");
 
 const oldSecret = process.env.CRON_SECRET;
 process.env.CRON_SECRET = "test-cron-secret";
@@ -13,6 +14,28 @@ const responseData = async response => ({ status: response.status, data: await r
 test.after(() => {
   if (oldSecret === undefined) delete process.env.CRON_SECRET;
   else process.env.CRON_SECRET = oldSecret;
+});
+
+test("expiry cleanup: rejects forged Blob hostnames without calling Blob deletion", async () => {
+  h.reset();
+  const oldSecret = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "test-cron-secret";
+  try {
+    const forged = "https://evil.example/.public.blob.vercel-storage.com/expired.png";
+    const message = { id: "expired-1", senderId: "owner", text: "", timestamp: Date.now() - 10000, expiresAt: Date.now() - 1000, mediaUrl: forged, mediaType: "image" };
+    const raw = JSON.stringify(message);
+    h.seedZsetEntry("chat:owner--member:messages", message.timestamp, raw);
+    h.seedZsetEntry("chat:expiring", message.expiresAt, { chatKey: "chat:owner--member:messages", messageId: message.id, raw });
+    const result = await responseData(await expiryCleanup.GET(new Request("http://localhost/api/cron/cleanup-expired-messages", {
+      headers: { authorization: "Bearer test-cron-secret" },
+    })));
+    assert.equal(result.status, 200);
+    assert.deepEqual(h.blobCalls, [], "an attacker-controlled URL must never reach Blob deletion");
+    assert.equal(h.getZset("chat:owner--member:messages").length, 0, "the expired message record is still removed");
+  } finally {
+    if (oldSecret === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = oldSecret;
+  }
 });
 
 test("media cleanup: scheduled endpoint rejects unauthenticated callers", async () => {
