@@ -212,10 +212,13 @@ test("offline messaging persists requests in IndexedDB and replays them with sta
   assert.match(queue, /indexedDB\.open/);
   assert.match(queue, /createObjectStore\(STORE_NAME, \{ keyPath: "id" \}\)/);
   assert.match(queue, /createIndex\("chatId"/);
+  assert.match(queue, /MAX_QUEUED_MESSAGES_PER_CHAT = 200/);
   assert.match(queue, /export async function enqueueOfflineMessage/);
   assert.match(queue, /export async function listOfflineMessages/);
   assert.match(queue, /export async function removeOfflineMessage/);
   assert.match(chat, /addEventListener\('online'/);
+  assert.match(chat, /addEventListener\('focus'/);
+  assert.match(chat, /addEventListener\('visibilitychange'/);
   assert.match(chat, /listOfflineMessages\(chatId\)/);
   assert.match(chat, /requestId: tempId/);
   assert.match(chat, /status: 'queued'/);
