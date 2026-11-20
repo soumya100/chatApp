@@ -47,7 +47,8 @@ const Chat: FC<ChatProps> = ({
   const groupId = isGroupChat ? chatId.replace('group--', '') : ''
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [isPartnerOnline, setIsPartnerOnline] = useState<boolean>(false)
-  const [isTyping, setIsTyping] = useState<boolean>(false)
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([])
+  const isTyping = typingUserIds.length > 0
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false)
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
@@ -58,7 +59,7 @@ const Chat: FC<ChatProps> = ({
   const [memberCount, setMemberCount] = useState<number>(
     initialGroup?.memberIds?.length || 0
   )
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const typingTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
 
   const jumpToPinnedMessage = (messageId: string) => {
     const element = document.getElementById(`message-${messageId}`)
@@ -110,18 +111,24 @@ const Chat: FC<ChatProps> = ({
     }
 
     const typingHandler = ({ userId, isTyping: typingState }: { userId: string; isTyping: boolean }) => {
-      if (userId === chatPartner.id) {
-        setIsTyping(typingState)
+      if (userId === sessionId || (!isGroupChat && userId !== chatPartner.id)) return
 
-        if (typingTimeoutRef.current) {
-          clearTimeout(typingTimeoutRef.current)
-        }
+      setTypingUserIds(previous =>
+        typingState
+          ? (previous.includes(userId) ? previous : [...previous, userId])
+          : previous.filter(id => id !== userId)
+      )
 
-        if (typingState) {
-          typingTimeoutRef.current = setTimeout(() => {
-            setIsTyping(false)
-          }, 3000)
-        }
+      const existingTimeout = typingTimeoutsRef.current.get(userId)
+      if (existingTimeout) clearTimeout(existingTimeout)
+      typingTimeoutsRef.current.delete(userId)
+
+      if (typingState) {
+        const timeout = setTimeout(() => {
+          setTypingUserIds(previous => previous.filter(id => id !== userId))
+          typingTimeoutsRef.current.delete(userId)
+        }, 3000)
+        typingTimeoutsRef.current.set(userId, timeout)
       }
     }
 
@@ -156,7 +163,8 @@ const Chat: FC<ChatProps> = ({
       privateChannel.unbind('group_members_updated', groupMembersUpdatedHandler)
       userGroupsChannel?.unbind('group_removed', groupRemovedHandler)
       if (userGroupsChannelKey) pusherClient.unsubscribe(userGroupsChannelKey)
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+      typingTimeoutsRef.current.forEach(timeout => clearTimeout(timeout))
+      typingTimeoutsRef.current.clear()
     }
   }, [chatId, chatPartner.id, groupId, isGroupChat, router, sessionId])
 
