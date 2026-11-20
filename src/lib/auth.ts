@@ -118,15 +118,28 @@ export const authOptions: NextAuthOptions = {
                 return token
             }
 
+            // A JWT is not proof that the account still exists. Re-check the
+            // authoritative user record on refresh so deleted accounts lose
+            // access instead of retaining a valid-looking stale session.
+            if (!token?.id || typeof token.id !== "string") {
+                return null
+            }
+
             const dbUserResult = (await fetchRedis("get", `user:${token.id}`)) as string | User | null
 
+            // Returning null tells NextAuth to invalidate the JWT/session.
+            // Do not fall back to stale claims when the account has been removed.
             if (!dbUserResult) {
-                return token
+                return null
             }
 
             const dbUser = (typeof dbUserResult === "string" ? JSON.parse(dbUserResult) : dbUserResult) as User
+            if (!dbUser?.id || dbUser.id !== token.id) {
+                return null
+            }
 
             return {
+                ...token,
                 id: dbUser.id,
                 name: dbUser.name,
                 email: dbUser.email,
@@ -143,8 +156,18 @@ export const authOptions: NextAuthOptions = {
             return session
         },
         redirect({ url, baseUrl }) {
-            if (url.startsWith("/")) return `${baseUrl}${url}`
-            if (new URL(url).origin === baseUrl) return url
+            if (url.startsWith("/") && !url.startsWith("//")) return `${baseUrl}${url}`
+
+            // Malformed URLs must fall back safely instead of throwing during
+            // the OAuth/callback redirect flow.
+            try {
+                const candidate = new URL(url)
+                const trustedOrigin = new URL(baseUrl).origin
+                if (candidate.origin === trustedOrigin) return candidate.toString()
+            } catch {
+                // Invalid redirect input is untrusted; use the app dashboard.
+            }
+
             return `${baseUrl}/dashboard`
         }
     }
