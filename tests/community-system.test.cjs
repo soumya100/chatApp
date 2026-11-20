@@ -153,6 +153,37 @@ test("community mutations: invite, accept, decline, remove and owner protection"
   assert.ok(!h.getSetMembers("user:member:communities").includes(communityId));
 });
 
+test("community admins can add a user directly and keep both membership indexes in sync", async () => {
+  h.reset();
+  const created = await call(communityCreate, { name: "Org" });
+  const communityId = created.data.community.id;
+  const ctx = { params: Promise.resolve({ communityId }) };
+  const post = async payload => status(await communityMutate.POST(h.request(payload), ctx));
+
+  const added = await post({ action: "addMember", memberId: "member" });
+  assert.equal(added.status, 200);
+  assert.ok(added.data.community.memberIds.includes("member"));
+  assert.ok(h.getSetMembers("user:member:communities").includes(communityId));
+  const ownerListing = await status(await communityCreate.GET());
+  assert.equal(ownerListing.data.communities[0].isAdmin, true);
+  h.setSession("member");
+  const memberListing = await status(await communityCreate.GET());
+  assert.equal(memberListing.data.communities[0].isAdmin, false);
+  h.setSession("owner");
+
+  assert.equal((await post({ action: "addMember", memberId: "member" })).status, 409);
+  assert.equal((await post({ action: "addMember", memberId: "unknown-user" })).status, 404);
+
+  await post({ action: "inviteMember", memberId: "other" });
+  const addedInvitee = await post({ action: "addMember", memberId: "other" });
+  assert.equal(addedInvitee.status, 200);
+  assert.ok(!h.getSetMembers("community:" + communityId + ":invites").includes("other"));
+  assert.ok(!h.getSetMembers("user:other:community-invites").includes(communityId));
+
+  h.setSession("member");
+  assert.equal((await post({ action: "addMember", memberId: "other" })).status, 403, "ordinary members cannot add community members");
+});
+
 test("community mutations: declines are idempotent on both invitation indexes", async () => {
   h.reset();
   const created = await call(communityCreate, { name: "Org" });

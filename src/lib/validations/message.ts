@@ -24,6 +24,8 @@ export const messageValidator = z.object({
     mentions: z.array(z.string()).optional(),
     senderName: z.string().optional(),
     senderImg: z.string().optional(),
+    featureType: z.enum(["poll", "event", "announcement"]).optional(),
+    featureId: z.string().optional(),
     replyTo: z.object({
         id: z.string(),
         senderName: z.string(),

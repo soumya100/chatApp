@@ -26,6 +26,8 @@ interface Message {
     seenAt?: number,
     senderName?: string,
     senderImg?: string,
+    featureType?: "poll" | "event" | "announcement",
+    featureId?: string,
     replyTo?: {
         id: string,
         senderName: string,

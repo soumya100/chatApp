@@ -29,7 +29,7 @@ export async function GET() {
       if (value) byId.set(allIds[index], value)
     } catch {}
   })
-  const communities = (ids || []).flatMap(id => byId.has(id) ? [byId.get(id)] : [])
+  const communities = (ids || []).flatMap(id => byId.has(id) ? [{ ...byId.get(id), isAdmin: (byId.get(id).adminIds || [byId.get(id).ownerId]).includes(userId) }] : [])
   const invites = (inviteIds || []).flatMap(id => byId.has(id) ? [byId.get(id)] : [])
   return Response.json({ communities, invites })
 }

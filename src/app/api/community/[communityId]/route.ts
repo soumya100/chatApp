@@ -10,6 +10,7 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("addGroup"), groupId: z.string().min(1) }),
   z.object({ action: z.literal("removeGroup"), groupId: z.string().min(1) }),
   z.object({ action: z.literal("inviteMember"), memberId: z.string().min(1) }),
+  z.object({ action: z.literal("addMember"), memberId: z.string().trim().min(1).max(128) }),
   z.object({ action: z.literal("acceptInvite") }),
   z.object({ action: z.literal("declineInvite") }),
   z.object({ action: z.literal("removeMember"), memberId: z.string().min(1) }),
@@ -127,6 +128,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ communi
         if (next.memberIds.includes(targetId)) return Response.json({ message: "User is already a member" }, { status: 409 })
         ops.push({ type: "sadd", key: `community:${communityId}:invites`, value: targetId })
         ops.push({ type: "sadd", key: `user:${targetId}:community-invites`, value: communityId })
+      } else if (parsed.data.action === "addMember") {
+        const targetId = parsed.data.memberId
+        const target = await db.get(`user:${targetId}`)
+        if (!target) return Response.json({ message: "User not found" }, { status: 404 })
+        if (next.memberIds.includes(targetId)) return Response.json({ message: "User is already a community member" }, { status: 409 })
+        next.memberIds.push(targetId)
+        ops.push({ type: "sadd", key: `user:${targetId}:communities`, value: communityId })
+        // If this user had a pending invitation, direct admin addition makes
+        // that invitation obsolete; clear both sides of its index atomically.
+        ops.push({ type: "srem", key: `community:${communityId}:invites`, value: targetId })
+        ops.push({ type: "srem", key: `user:${targetId}:community-invites`, value: communityId })
       } else if (parsed.data.action === "acceptInvite") {
         next.memberIds = Array.from(new Set([...next.memberIds, userId]))
         ops.push({ type: "srem", key: `community:${communityId}:invites`, value: userId })

@@ -144,7 +144,7 @@ const AddGroupMembersModal: FC<AddGroupMembersModalProps> = ({
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-md p-6 text-gray-900 dark:text-gray-100">
+              <Dialog.Panel className="relative transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-md p-6 text-gray-900 dark:text-gray-100">
                 {/* Close Button */}
                 <button
                   type="button"
@@ -224,7 +224,7 @@ const AddGroupMembersModal: FC<AddGroupMembersModalProps> = ({
                           className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer border transition-all select-none ${
                             isSelected
                               ? "bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700"
-                              : "border-transparent hover:bg-gray-50 dark:hover:bg-zinc-800/60"
+                              : "border-transparent hover:bg-gray-50 dark:hover:bg-slate-800/60"
                           }`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
@@ -258,11 +258,11 @@ const AddGroupMembersModal: FC<AddGroupMembersModalProps> = ({
                 </div>
 
                 {/* Footer Buttons */}
-                <div className="mt-5 flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100 dark:border-zinc-800">
+                <div className="mt-5 flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100 dark:border-slate-800">
                   <button
                     type="button"
                     onClick={onClose}
-                    className="px-4 py-2 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
+                    className="px-4 py-2 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 transition"
                   >
                     Cancel
                   </button>

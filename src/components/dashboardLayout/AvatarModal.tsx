@@ -140,17 +140,18 @@ const AvatarModal: FC<AvatarModalProps> = ({
                             leaveFrom="opacity-100 scale-100"
                             leaveTo="opacity-0 scale-95"
                         >
-                            <Dialog.Panel className="relative transform overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-lg p-6 sm:p-7 text-gray-900 dark:text-gray-100">
+                            <Dialog.Panel className="relative transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-lg p-6 sm:p-7 text-gray-900 dark:text-gray-100">
                                 {/* Close Button */}
                                 <button
+                                    type="button"
                                     onClick={onClose}
-                                    className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
+                                    className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition"
                                 >
                                     <X className="w-5 h-5" />
                                 </button>
 
                                 {/* Header & Preview */}
-                                <div className="flex items-center gap-4 pb-5 border-b border-gray-200 dark:border-zinc-800">
+                                <div className="flex items-center gap-4 pb-5 border-b border-gray-200 dark:border-slate-800">
                                     <div className="relative group">
                                         <Avatar
                                             src={selectedImage}
@@ -177,14 +178,14 @@ const AvatarModal: FC<AvatarModalProps> = ({
                                 </div>
 
                                 {/* Tabs Navigation */}
-                                <div className="flex gap-2 pt-4 pb-2 border-b border-gray-100 dark:border-zinc-800">
+                                <div className="flex gap-2 pt-4 pb-2 border-b border-gray-100 dark:border-slate-800">
                                     <button
                                         type="button"
                                         onClick={() => setActiveTab("prebuilt")}
                                         className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
                                             activeTab === "prebuilt"
                                                 ? "bg-indigo-600 text-white shadow-sm"
-                                                : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800"
+                                                : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800"
                                         }`}
                                     >
                                         <Sparkles className="w-3.5 h-3.5" />
@@ -196,7 +197,7 @@ const AvatarModal: FC<AvatarModalProps> = ({
                                         className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
                                             activeTab === "upload"
                                                 ? "bg-indigo-600 text-white shadow-sm"
-                                                : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800"
+                                                : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800"
                                         }`}
                                     >
                                         <Upload className="w-3.5 h-3.5" />
@@ -208,7 +209,7 @@ const AvatarModal: FC<AvatarModalProps> = ({
                                         className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
                                             activeTab === "initials"
                                                 ? "bg-indigo-600 text-white shadow-sm"
-                                                : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800"
+                                                : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800"
                                         }`}
                                     >
                                         <User className="w-3.5 h-3.5" />
@@ -233,7 +234,7 @@ const AvatarModal: FC<AvatarModalProps> = ({
                                                         className={`relative flex flex-col items-center gap-1.5 p-2 rounded-xl border transition-all ${
                                                             isSelected
                                                                 ? "border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 ring-2 ring-indigo-500 scale-105"
-                                                                : "border-gray-200 dark:border-zinc-800 hover:border-indigo-400 hover:bg-gray-50 dark:hover:bg-zinc-800/60"
+                                                                : "border-gray-200 dark:border-slate-800 hover:border-indigo-400 hover:bg-gray-50 dark:hover:bg-slate-800/60"
                                                         }`}
                                                     >
                                                         <Avatar
@@ -305,7 +306,7 @@ const AvatarModal: FC<AvatarModalProps> = ({
                                                         className={`flex flex-col items-center gap-2 p-2.5 rounded-xl border transition ${
                                                             isSelected
                                                                 ? "border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 ring-2 ring-indigo-500 scale-105"
-                                                                : "border-gray-200 dark:border-zinc-800 hover:border-indigo-400 hover:bg-gray-50 dark:hover:bg-zinc-800/60"
+                                                                : "border-gray-200 dark:border-slate-800 hover:border-indigo-400 hover:bg-gray-50 dark:hover:bg-slate-800/60"
                                                         }`}
                                                     >
                                                         <Avatar
@@ -325,11 +326,11 @@ const AvatarModal: FC<AvatarModalProps> = ({
                                 )}
 
                                 {/* Modal Footer */}
-                                <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-zinc-800">
+                                <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-slate-800">
                                     <button
                                         type="button"
                                         onClick={onClose}
-                                        className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-lg transition"
+                                        className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition"
                                     >
                                         Cancel
                                     </button>
