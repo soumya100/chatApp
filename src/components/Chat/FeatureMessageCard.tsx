@@ -89,7 +89,7 @@ const FeatureMessageCard: FC<Props> = ({ groupId, featureType, featureId }) => {
       {event.timeOptions.map((option: any) => {
         const chosen = (selected.length ? selected : event.myOptionIds || []).includes(option.id)
         return <label key={option.id} className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-white/15 bg-white/5 px-2.5 py-2 text-xs">
-          <span className="flex items-center gap-2"><input type="checkbox" checked={chosen} disabled={busy} onChange={e => setSelected(current => e.target.checked ? [...(current.length ? current : event.myOptionIds || []), option.id] : (current.length ? current : event.myOptionIds || []).filter(id => id !== option.id))}/>{new Date(option.startsAt).toLocaleString()}</span>
+          <span className="flex items-center gap-2"><input type="checkbox" checked={chosen} disabled={busy} onChange={e => setSelected(current => e.target.checked ? [...(current.length ? current : event.myOptionIds || []), option.id] : (current.length ? current : event.myOptionIds || []).filter((id: string) => id !== option.id))}/>{new Date(option.startsAt).toLocaleString()}</span>
           <span className="opacity-65">{option.votes?.length || 0} votes</span>
         </label>
       })}
