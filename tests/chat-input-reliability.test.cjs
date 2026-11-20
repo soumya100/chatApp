@@ -70,6 +70,16 @@ test("Chat surfaces send failures to the composer instead of swallowing the reje
   assert.doesNotMatch(handler, /toast\.error/);
 });
 
+test("realtime reconnect reconciles durable messages and replaces optimistic duplicates", () => {
+  const chat = fs.readFileSync(path.join(__dirname, "../src/components/Chat/Messages.tsx"), "utf8");
+  assert.match(chat, /pusherClient\.connection\.bind\('state_change'/);
+  assert.match(chat, /current === 'connected' && previous !== 'connected'/);
+  assert.match(chat, /axios\.get<{ messages: Message\[\]; hasMore: boolean }>/);
+  assert.match(chat, /existingMessage\.clientRequestId === serverMessage\.clientRequestId/);
+  assert.match(chat, /message\.clientRequestId === incoming\.clientRequestId/);
+  assert.match(chat, /pusherClient\.connection\.unbind\('state_change', connectionStateHandler\)/);
+});
+
 test("group typing indicators track multiple members independently and expire stale states", () => {
   const chat = fs.readFileSync(
     path.join(__dirname, "../src/components/Chat/index.tsx"),
