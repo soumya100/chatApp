@@ -111,6 +111,37 @@ const Chat: FC<ChatProps> = ({
     setMessages(initialMessages)
   }, [initialMessages])
 
+  // Search recent server history as well as messages already loaded in the
+  // current viewport. Debouncing and aborting stale requests keeps typing
+  // responsive and prevents out-of-order search responses from winning.
+  useEffect(() => {
+    const query = searchQuery.trim()
+    if (!isSearchOpen || query.length < 2) return
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      try {
+        const response = await axios.get(
+          `/api/message/search?chatId=${encodeURIComponent(chatId)}&query=${encodeURIComponent(query)}`,
+          { signal: controller.signal }
+        )
+        const results = Array.isArray(response.data?.results) ? response.data.results as Message[] : []
+        setMessages(previous => {
+          const merged = new Map(previous.map(message => [message.id, message]))
+          results.forEach(message => merged.set(message.id, { ...merged.get(message.id), ...message }))
+          return Array.from(merged.values()).sort((a, b) => b.timestamp - a.timestamp)
+        })
+      } catch (error: any) {
+        if (error?.name !== 'CanceledError' && error?.code !== 'ERR_CANCELED') {
+          console.error('[message-search] Search request failed:', error)
+        }
+      }
+    }, 300)
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [chatId, isSearchOpen, searchQuery])
+
   useEffect(() => {
     let active = true
     const restoreAndFlush = async () => {
