@@ -467,3 +467,43 @@ jobs:
           fi
           sudo iptables -D OUTPUT -o "$ZAP_BR_IF" -p tcp --dport 8080 -j DROP || true
           docker network rm zap-scan-net || true
+
+  pr-quality-gate:
+    name: PR quality gate
+    if: always()
+    needs:
+      - unit-and-static
+      - redis-lua-integration
+      - build-and-browser-smoke
+      - vapt
+      - vapt-active
+      - supply-chain-security
+      - codeql
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every validation and security job to pass
+        env:
+          UNIT_STATIC: ${{ needs.unit-and-static.result }}
+          REDIS_INTEGRATION: ${{ needs.redis-lua-integration.result }}
+          BUILD_BROWSER_SMOKE: ${{ needs.build-and-browser-smoke.result }}
+          VAPT_PASSIVE: ${{ needs.vapt.result }}
+          VAPT_ACTIVE: ${{ needs.vapt-active.result }}
+          SUPPLY_CHAIN: ${{ needs.supply-chain-security.result }}
+          CODEQL: ${{ needs.codeql.result }}
+        run: |
+          printf '%s\\n' \
+            "unit/static: $UNIT_STATIC" \
+            "real Redis: $REDIS_INTEGRATION" \
+            "build/browser smoke: $BUILD_BROWSER_SMOKE" \
+            "ZAP passive VAPT: $VAPT_PASSIVE" \
+            "ZAP active VAPT: $VAPT_ACTIVE" \
+            "supply-chain: $SUPPLY_CHAIN" \
+            "CodeQL: $CODEQL"
+          for result in "$UNIT_STATIC" "$REDIS_INTEGRATION" "$BUILD_BROWSER_SMOKE" "$VAPT_PASSIVE" "$VAPT_ACTIVE" "$SUPPLY_CHAIN" "$CODEQL"; do
+            if [ "$result" != "success" ]; then
+              echo "PR quality gate failed: every job must succeed."
+              exit 1
+            fi
+          done
+          echo "All PR validation and security gates passed."
