@@ -74,3 +74,10 @@ test("group typing indicators track multiple members independently and expire st
   assert.match(chat, /typingTimeoutsRef\.current\.forEach\(timeout => clearTimeout\(timeout\)\)/);
   assert.match(chat, /useEffect\(\(\) => \{\s*setTypingUserIds\(\[\]\)/);
 });
+
+test("a completed media upload is reused after message-send failure instead of uploading duplicate blobs", () => {
+  assert.match(source, /uploaded\?:\s*\{/);
+  assert.match(source, /const uploadRes = attachment\.uploaded \|\| await uploadMedia\(attachment\.file\)/);
+  assert.match(source, /setAttachment\(previous => previous \? \{ \.\.\.previous, uploaded: uploadRes \} : previous\)/);
+  assert.match(source, /removeAttachment\(\)/);
+});
