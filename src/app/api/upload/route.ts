@@ -1,5 +1,6 @@
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { rateLimit } from "@/lib/ratelimit"
 import { handleUpload } from "@vercel/blob/client"
 import { getServerSession } from "next-auth"
 
@@ -82,6 +83,11 @@ export async function POST(request: Request) {
                     throw new Error("Unauthorized")
                 }
 
+                // Limit token creation per authenticated user to stop upload
+                // endpoint abuse before a Blob token is minted.
+                const quota = await rateLimit(session.user.id, "blob_upload", { limit: 20, windowSeconds: 60 * 60 })
+                if (!quota.success) throw new Error("UPLOAD_RATE_LIMITED")
+
                 return {
                     allowedContentTypes: ALLOWED_CONTENT_TYPES,
                     maximumSizeInBytes: MAX_UPLOAD_SIZE,
@@ -112,7 +118,7 @@ export async function POST(request: Request) {
 
         return Response.json(
             { error: message },
-            { status: message === "Unauthorized" ? 401 : 400 }
+            { status: message === "Unauthorized" ? 401 : message === "UPLOAD_RATE_LIMITED" ? 429 : 400 }
         )
     }
 }
