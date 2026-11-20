@@ -4,6 +4,7 @@ import { Button } from '@/common'
 import { useAudioRecorder, useVideoNoteRecorder } from '@/hooks'
 import { uploadMedia } from '@/lib/mediaUpload'
 import axios from 'axios'
+import { nanoid } from 'nanoid'
 import {
   FileIcon,
   Film,
@@ -31,7 +32,7 @@ import TextareaAutosize from 'react-textarea-autosize'
 interface ChatInputProps {
   chatPartner: string
   chatId: string
-  onSendMessage?: (text: string, mediaPayload?: any) => Promise<void>
+  onSendMessage?: (text: string, mediaPayload?: any, requestId?: string) => Promise<void>
   replyingTo?: Message | null
   onCancelReply?: () => void
 }
@@ -61,6 +62,7 @@ const ChatInput: FC<ChatInputProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [input, setInput] = useState<string>('')
   const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null)
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null)
   const lastTypingSignal = useRef<number>(0)
 
@@ -137,6 +139,7 @@ const ChatInput: FC<ChatInputProps> = ({
   })
 
   const handleInputChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    if (pendingRequestId) setPendingRequestId(null)
     setInput(e.target.value)
 
     const now = Date.now()
@@ -161,6 +164,7 @@ const ChatInput: FC<ChatInputProps> = ({
     else if (mimeType.startsWith('video/')) fileType = 'video'
     else if (mimeType.startsWith('audio/')) fileType = 'audio'
 
+    if (pendingRequestId) setPendingRequestId(null)
     const previewUrl = URL.createObjectURL(file)
 
     setAttachment({
@@ -175,6 +179,7 @@ const ChatInput: FC<ChatInputProps> = ({
       URL.revokeObjectURL(attachment.previewUrl)
     }
     setAttachment(null)
+    setPendingRequestId(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -186,6 +191,8 @@ const ChatInput: FC<ChatInputProps> = ({
     if ((!trimmed && !attachment) || isLoading) return
 
     setIsLoading(true)
+    const requestId = pendingRequestId || nanoid()
+    setPendingRequestId(requestId)
     axios.post('/api/message/typing', { chatId, isTyping: false }).catch(() => {})
 
     try {
@@ -236,10 +243,12 @@ const ChatInput: FC<ChatInputProps> = ({
           text: trimmed,
           chatId,
           ...mediaPayload,
+          requestId,
         })
       }
 
       setInput('')
+      setPendingRequestId(null)
       removeAttachment()
       if (replyingTo) onCancelReply?.()
       textAreaRef.current?.focus()
@@ -253,6 +262,7 @@ const ChatInput: FC<ChatInputProps> = ({
   const enterPress = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Escape' && replyingTo) {
       e.preventDefault()
+      setPendingRequestId(null)
       onCancelReply?.()
       return
     }
@@ -326,7 +336,7 @@ const ChatInput: FC<ChatInputProps> = ({
           </div>
           <button
             type='button'
-            onClick={onCancelReply}
+            onClick={() => { setPendingRequestId(null); onCancelReply?.() }}
             className='p-1 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 shrink-0'
             title='Cancel reply (Esc)'
             aria-label='Cancel reply'
