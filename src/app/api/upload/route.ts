@@ -7,6 +7,25 @@ export const runtime = "nodejs"
 
 const MAX_UPLOAD_SIZE = 30 * 1024 * 1024
 
+// Accept only a single Vercel Blob store hostname. Substring checks are unsafe:
+// an attacker can place the trusted suffix in a path, query, or unrelated host.
+function isOwnedVercelBlobUrl(value: unknown): value is string {
+    if (typeof value !== "string") return false
+    try {
+        const parsed = new URL(value)
+        return parsed.protocol === "https:"
+            && !parsed.username
+            && !parsed.password
+            && !parsed.port
+            && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.public\\.blob\\.vercel-storage\\.com$/i.test(parsed.hostname)
+            && parsed.pathname.length > 1
+            && !parsed.search
+            && !parsed.hash
+    } catch {
+        return false
+    }
+}
+
 // Exact MIME allow-list. Wildcards like "image/*" are deliberately avoided:
 // an image/* entry also admits image/svg+xml, and SVG served inline executes
 // script (stored XSS). Every entry below renders as inert raster media.
@@ -77,7 +96,7 @@ export async function POST(request: Request) {
             const candidates = [body?.payload?.blob, body?.payload, ...(Array.isArray(body?.payload?.files) ? body.payload.files : [])]
             for (const candidate of candidates) {
                 const url = candidate?.url
-                if (typeof url === "string" && url.startsWith("https://") && url.includes(".public.blob.vercel-storage.com/")) completedUrls.add(url)
+                if (isOwnedVercelBlobUrl(url)) completedUrls.add(url)
             }
             for (const url of completedUrls) {
                 // The message-send Lua transaction removes this marker atomically
