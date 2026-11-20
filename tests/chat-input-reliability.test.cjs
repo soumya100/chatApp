@@ -81,3 +81,16 @@ test("a completed media upload is reused after message-send failure instead of u
   assert.match(source, /setAttachment\(previous => previous \? \{ \.\.\.previous, uploaded: uploadRes \} : previous\)/);
   assert.match(source, /removeAttachment\(\)/);
 });
+
+test("message retry preserves voice duration and quoted reply metadata", () => {
+  const chat = fs.readFileSync(
+    path.join(__dirname, "../src/components/Chat/index.tsx"),
+    "utf8"
+  );
+  const retry = chat.slice(
+    chat.indexOf("const handleRetryMessage"),
+    chat.indexOf("return (", chat.indexOf("const handleRetryMessage"))
+  );
+  assert.match(retry, /duration: failedMsg\.duration/);
+  assert.match(retry, /replyTo: failedMsg\.replyTo/);
+});
