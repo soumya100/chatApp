@@ -19,6 +19,8 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   const [eventTitle, setEventTitle] = useState("")
   const [eventDescription, setEventDescription] = useState("")
   const [eventDate, setEventDate] = useState("")
+  const [eventTimeOptions, setEventTimeOptions] = useState(["", ""])
+  const [eventSelections, setEventSelections] = useState<Record<string, string[]>>({})
   const [busy, setBusy] = useState(false)
   const [pollSelections, setPollSelections] = useState<Record<string, string[]>>({})
 
@@ -63,8 +65,10 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   const createEvent = async (e: FormEvent) => {
     e.preventDefault()
     if (!eventDate) return
-    const saved = await act({ action: "createEvent", title: eventTitle, description: eventDescription, startsAt: new Date(eventDate).getTime() })
-    if (saved) { setEventTitle(""); setEventDescription(""); setEventDate("") }
+    const selectedTimes = eventTimeOptions.map(value => value ? new Date(value).getTime() : 0).filter(Boolean)
+    if (selectedTimes.length === 1) { toast.error("Add at least two time options, or clear both to create a fixed-time event."); return }
+    const saved = await act({ action: "createEvent", title: eventTitle, description: eventDescription, startsAt: new Date(eventDate).getTime(), ...(selectedTimes.length >= 2 ? { timeOptions: selectedTimes } : {}) })
+    if (saved) { setEventTitle(""); setEventDescription(""); setEventDate(""); setEventTimeOptions(["", ""]) }
   }
 
   return (
@@ -87,6 +91,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
               <form onSubmit={createEvent} className="space-y-2">
                 <input value={eventTitle} onChange={e=>setEventTitle(e.target.value)} placeholder="Event title" maxLength={120} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07]"/>
                 <input type="datetime-local" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07]"/>
+                <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-400/20 dark:bg-indigo-400/[0.06]"><p className="mb-2 text-xs font-semibold">Let the group choose a time</p><p className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">Add at least two alternatives to enable voting.</p>{eventTimeOptions.map((value,index)=><input key={index} type="datetime-local" value={value} onChange={e=>setEventTimeOptions(prev=>prev.map((item,i)=>i===index?e.target.value:item))} className="mb-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs dark:border-white/10 dark:bg-white/[0.04]"/>)}<button type="button" onClick={()=>setEventTimeOptions(prev=>prev.length<6?[...prev,""]:prev)} disabled={eventTimeOptions.length>=6} className="text-xs font-medium text-indigo-600 disabled:opacity-40">+ Add another time</button></div>
                 <textarea value={eventDescription} onChange={e=>setEventDescription(e.target.value)} placeholder="Details (optional)" rows={2} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07]"/>
                 <button disabled={busy || !eventTitle.trim() || !eventDate} className="rounded-xl bg-indigo-600 text-white px-3 py-2 text-xs font-semibold disabled:opacity-50">Create event</button>
               </form>
