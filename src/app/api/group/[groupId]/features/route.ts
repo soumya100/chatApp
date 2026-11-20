@@ -100,6 +100,9 @@ end
 if ARGV[4] and ARGV[4] ~= "" then
   local message = cjson.decode(ARGV[4])
   redis.call("ZADD", KEYS[2], message.timestamp, ARGV[4])
+  if message.expiresAt then
+    redis.call("ZADD", KEYS[3], message.expiresAt, cjson.encode({chatKey = "chat:group--" .. string.match(KEYS[2], "^chat:group%-%-(.+):messages$"), messageId = message.id, raw = ARGV[4]}))
+  end
 end
 
 local encodedFeatures = normalizeFeatureArrays(cjson.encode(features))
@@ -157,13 +160,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
       ? `📊 Poll: ${payload.question}\nOptions: ${payload.options.map((option: any) => option.label).join(" · ")}`
       : action === "createEvent"
         ? [`📅 Event: ${payload.title}`, `When: ${new Date(payload.startsAt).toLocaleString()}`, payload.location ? `Location: ${payload.location}` : "", payload.description || ""].filter(Boolean).join("\n")
-        : action === "announce" ? `📢 Announcement: ${payload.text}` : ""
+        : action === "announce" ? payload.text : ""
     const inboxMessage = createsInboxMessage ? messageValidator.parse({
       id: nanoid(),
       receiverId: `group--${groupId}`,
       senderId: userId,
       text: inboxText.slice(0, 2000),
       timestamp: now,
+      expiresAt: group.settings?.disappearingMessagesSeconds ? now + group.settings.disappearingMessagesSeconds * 1000 : undefined,
       senderName: session.user.name || "Group member",
       featureType: action === "createPoll" ? "poll" : action === "createEvent" ? "event" : "announcement",
       featureId: payload.id
@@ -171,7 +175,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ groupId
 
     const key = `group:${groupId}:features`
     const messageKey = `chat:group--${groupId}:messages`
-    const rawResult = await db.eval(atomicFeatureUpdate, [key, messageKey], [userId, action, JSON.stringify(payload), inboxMessage ? JSON.stringify(inboxMessage) : ""])
+    const rawResult = await db.eval(atomicFeatureUpdate, [key, messageKey, "chat:expiring"], [userId, action, JSON.stringify(payload), inboxMessage ? JSON.stringify(inboxMessage) : ""])
     const updated = typeof rawResult === "string" ? JSON.parse(rawResult) : rawResult as any
     if (updated?.error) {
       const status = updated.error === "Poll is unavailable" || updated.error === "Event not found" ? 404 : 400
