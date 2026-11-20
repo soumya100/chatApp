@@ -54,18 +54,26 @@ test("Redis Lua integration: message send is idempotent and increments unread on
   const script = lua("src/app/api/message/send/route.ts", "atomicPersistMessage");
   await redis(["FLUSHDB"]);
   const idempotencyKey = "message:idempotency:owner:owner--member:req-1";
+  const fingerprintKey = idempotencyKey + ":fingerprint";
+  const deliveryKey = "chat:test-direct:delivery:outbox";
+  const orphanKey = "media:orphans";
   const unreadKey = "user:member:unread";
   const message = seedMessage("server-message-1");
-  const args = ["1000", message, "", "", "owner--member"];
-  const keys = [idempotencyKey, CHAT, "chat:expiring", unreadKey];
+  const fingerprint = "payload-fingerprint-v1";
+  const outboxRecord = JSON.stringify({ event: "incoming-message", payload: JSON.parse(message) });
+  const args = ["1000", message, "", "", "owner--member", fingerprint, outboxRecord, ""];
+  const keys = [idempotencyKey, fingerprintKey, CHAT, "chat:expiring", deliveryKey, orphanKey, unreadKey];
 
   const first = (await evalLua(script, keys, args)).split("\n");
   const retry = (await evalLua(script, keys, args)).split("\n");
+  const collision = (await evalLua(script, keys, [...args.slice(0, 5), "different-payload", outboxRecord, ""])).split("\n");
   assert.equal(Number(first[0]), 1, "first send creates the message");
   assert.equal(Number(retry[0]), 0, "retry returns the previously stored message");
+  assert.equal(Number(collision[0]), -1, "a changed payload cannot reuse the same idempotency key");
   assert.equal(JSON.parse(first[1]).id, "server-message-1");
   assert.equal(JSON.parse(retry[1]).id, "server-message-1");
   assert.equal((await rows(CHAT)).length, 1);
+  assert.equal((await rows(deliveryKey)).length, 1, "the realtime event remains in the durable outbox");
   assert.equal(Number(await redis(["HGET", unreadKey, "owner--member"])), 1);
   assert.ok(Number(await redis(["TTL", idempotencyKey])) > 0);
 });
