@@ -206,7 +206,7 @@ async function exerciseBrowser(name, browserType) {
     for (const width of [320, 768]) {
       await page.setViewportSize({ width, height: width < 400 ? 740 : 1024 });
       await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
-      await page.getByRole("heading", { name: /welcome to chat\\+/i }).waitFor();
+      await page.getByRole("heading", { name: /welcome to chat\+/i }).waitFor();
       const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
       assert.ok(documentWidth <= width, `${name}: login page overflows ${width}px viewport: ${documentWidth}px`);
     }
