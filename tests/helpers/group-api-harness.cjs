@@ -424,6 +424,12 @@ const db = {
       if (args[3]) {
         const message = JSON.parse(args[3]);
         zadd(keys[1], { score: message.timestamp, member: args[3] });
+        if (message.expiresAt) {
+          zadd(keys[2], {
+            score: message.expiresAt,
+            member: JSON.stringify({ chatKey: keys[1], messageId: message.id, raw: args[3] }),
+          });
+        }
       }
       return JSON.stringify({ features: state, result });
     }
