@@ -191,6 +191,7 @@ const Chat: FC<ChatProps> = ({
       const response = await axios.post<Message>('/api/message/send', {
         text,
         chatId,
+        requestId: tempId,
         ...mediaPayload,
       })
 
@@ -227,6 +228,7 @@ const Chat: FC<ChatProps> = ({
         fileSize: failedMsg.fileSize,
         duration: failedMsg.duration,
         replyTo: failedMsg.replyTo,
+        requestId: failedMsg.id,
       })
 
       setMessages((prev) =>
