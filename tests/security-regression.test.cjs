@@ -207,3 +207,21 @@ test("dangerous raw HTML injection is not introduced in app components", () => {
     assert.doesNotMatch(source, /dangerouslySetInnerHTML/, path.relative(root, file));
   }
 });
+
+test("deleted or mismatched user records invalidate stale NextAuth JWT sessions", () => {
+  const auth = read("src/lib/auth.ts");
+  assert.match(auth, /if \(!token\?\.id \|\| typeof token\.id !== "string"\)\s*\{\s*return null/s);
+  assert.match(auth, /if \(!dbUserResult\)\s*\{\s*return null/s);
+  assert.match(auth, /if \(!dbUser\?\.id \|\| dbUser\.id !== token\.id\)\s*\{\s*return null/s);
+  assert.match(auth, /return \{\s*\.\.\.token,\s*id: dbUser\.id/s);
+  assert.doesNotMatch(auth, /if \(!dbUserResult\)\s*\{\s*return token/s);
+});
+
+test("authentication redirects reject malformed and cross-origin URLs safely", () => {
+  const auth = read("src/lib/auth.ts");
+  assert.match(auth, /url\.startsWith\("\/"\) && !url\.startsWith\("\/\/"\)/);
+  assert.match(auth, /const candidate = new URL\(url\)/);
+  assert.match(auth, /candidate\.origin === trustedOrigin/);
+  assert.match(auth, /catch \{[\s\S]*?Invalid redirect input is untrusted/);
+  assert.match(auth, /return `\$\{baseUrl\}\/dashboard`/);
+});
