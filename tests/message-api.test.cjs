@@ -559,6 +559,7 @@ test("message history: authorization and query validation", async () => {
 // ------------------------------------------------------------ message search
 test("message search: case-insensitive match excluding deleted messages", async () => {
   h.reset();
+  seedDirectFriendship();
   const chatId = h.setDirectMessages([
     { id: "m1", senderId: "owner", text: "Hello World", timestamp: 1, receiverId: "member" },
     { id: "m2", senderId: "member", text: "say HELLO again", timestamp: 2, receiverId: "owner" },
