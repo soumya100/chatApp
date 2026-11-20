@@ -260,6 +260,7 @@ test("message delete: external attachments and blob outages are handled safely",
   assert.equal(result.status, 200);
   assert.deepEqual(h.blobCalls, [], "third-party URLs must not be sent to Blob deletion");
   h.reset();
+  seedDirectFriendship();
   h.setDirectMessages([{ id: "m3", senderId: "owner", text: "x", timestamp: 4, mediaUrl: "https://bucket.public.blob.vercel-storage.com/b.png" }]);
   h.setBlobFailure(true);
   const failing = await status(await remove.POST(h.request({ messageId: "m3", chatId: DIRECT })));
