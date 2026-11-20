@@ -16,7 +16,7 @@ function walk(directory) {
 test("the API route inventory is complete and every route exports an HTTP handler", () => {
   const apiRoot = path.join(root, "src/app/api");
   const routes = walk(apiRoot).filter(file => /route\.(ts|js)$/.test(file));
-  assert.equal(routes.length, 30, "update this inventory assertion when adding or removing API routes");
+  assert.equal(routes.length, 31, "update this inventory assertion when adding or removing API routes");
 
   for (const file of routes) {
     const source = fs.readFileSync(file, "utf8");
@@ -191,4 +191,16 @@ test("group activity refreshes without hiding the panel and disables duplicate e
   const source = read("src/components/Chat/GroupFeaturesPanel.tsx");
   assert.match(source, /await load\(false\)/);
   assert.match(source, /disabled=\{busy\} onClick=\{\(\)=>act\(\{action:"respondEvent"/);
+});
+
+
+test("Redis operations probe is secret-authenticated and exposes only aggregate queue metrics", () => {
+  const source = read("src/app/api/health/redis/route.ts");
+  assert.match(source, /authorization.*Bearer/);
+  assert.match(source, /db\.ping\(\)/);
+  assert.match(source, /chat:expiring/);
+  assert.match(source, /media:cleanup/);
+  assert.match(source, /media:orphans/);
+  assert.match(source, /Do not leak Redis URLs, tokens, commands or raw provider errors/);
+  assert.doesNotMatch(source, /UPSTASH_REDIS_REST_TOKEN|UPSTASH_REDIS_REST_URL/);
 });
