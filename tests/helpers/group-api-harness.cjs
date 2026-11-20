@@ -288,6 +288,7 @@ function isInvalidPollSelection(poll, optionIds) {
 }
 
 const db = {
+  async ping() { return "PONG"; },
   async get(key) {
     return readRaw(key);
   },
