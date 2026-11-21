@@ -152,7 +152,10 @@ jobs:
       - name: Install pinned Playwright and browser engines
         run: |
           npm install --global playwright@1.65.1
-          playwright install --with-deps chromium firefox webkit
+          # Avoid --with-deps: it triggers a large apt transaction on the hosted runner
+          # and exhausted the 45-minute job timeout before smoke tests could start.
+          # Browser binaries stay pinned to the Playwright version above.
+          playwright install chromium firefox webkit
 
       - name: Start production server
         run: |
