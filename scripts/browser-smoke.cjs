@@ -15,7 +15,7 @@ try {
   throw new Error(
     `Playwright is required by the browser smoke test but is not installed. ` +
     `Install the pinned build: npm install --global playwright@${PLAYWRIGHT_PIN} ` +
-    `&& playwright install --with-deps chromium firefox webkit`
+    `&& playwright install chromium firefox webkit`
   );
 }
 const { chromium, firefox, webkit } = playwright;
@@ -169,7 +169,21 @@ async function exerciseBrowser(name, browserType) {
   const pageErrors = [];
   const failedRequests = [];
   page.on("pageerror", error => pageErrors.push(error.message));
-  page.on("requestfailed", request => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText || "failed"}`));
+  page.on("requestfailed", request => {
+    const errorText = request.failure()?.errorText || "failed";
+    const requestUrl = request.url();
+    // Next.js may cancel an in-flight React Server Components (_rsc) fetch
+    // when a later navigation supersedes it. Chromium reports that expected
+    // cancellation as net::ERR_ABORTED; it is not a failed server request.
+    // Keep every other failed request visible to the smoke-test assertion.
+    const expectedNavigationAbort =
+      errorText === "net::ERR_ABORTED" &&
+      request.method() === "GET" &&
+      new URL(requestUrl).searchParams.has("_rsc");
+    if (!expectedNavigationAbort) {
+      failedRequests.push(`${request.method()} ${requestUrl}: ${errorText}`);
+    }
+  });
 
   try {
     await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
