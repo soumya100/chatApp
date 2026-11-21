@@ -1,6 +1,9 @@
 "use client"
 
-import { FC, FormEvent, useCallback, useEffect, useState } from "react"
+import { FC, useCallback, useEffect, useState } from "react"
+import { useFieldArray, useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
 import axios from "axios"
 import toast from "react-hot-toast"
 import { Dialog } from "@headlessui/react"
@@ -10,17 +13,18 @@ import { toPusherKey } from "@/lib/utils"
 import DateTimePicker from "@/components/Chat/DateTimePicker"
 
 interface Props { isOpen: boolean; onClose: () => void; groupId: string; isAdmin: boolean }
+const pollSchema = z.object({ question: z.string().trim().min(3, "Enter a question with at least 3 characters").max(240), options: z.array(z.object({ value: z.string().trim().min(1, "Enter an option").max(100) })).min(2, "Add at least two options").max(10), multiple: z.boolean() })
+const eventSchema = z.object({ title: z.string().trim().min(3, "Event title must be at least 3 characters").max(120), description: z.string().max(1000), startsAt: z.number().int().positive("Choose an event date and time"), timeOptions: z.array(z.number().int().positive()).max(6) }).refine(data => data.timeOptions.length !== 1, { message: "Add at least two alternative times, or remove alternatives to use a fixed time", path: ["timeOptions"] })
+type PollFormValues = z.infer<typeof pollSchema>
 type FeatureData = { polls: any[]; events: any[]; announcements: any[] }
 
 const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) => {
   const [features, setFeatures] = useState<FeatureData>({ polls: [], events: [], announcements: [] })
   const [loading, setLoading] = useState(false)
-  const [question, setQuestion] = useState("")
-  const [options, setOptions] = useState(["", ""])
-  const [multiple, setMultiple] = useState(false)
+  const pollForm = useForm<PollFormValues>({ resolver: zodResolver(pollSchema), defaultValues: { question: "", options: [{ value: "" }, { value: "" }], multiple: false } })
+  const pollFields = useFieldArray({ control: pollForm.control, name: "options" })
   const [announcement, setAnnouncement] = useState("")
-  const [eventTitle, setEventTitle] = useState("")
-  const [eventDescription, setEventDescription] = useState("")
+  const eventForm = useForm<{ title: string; description: string }>({ resolver: zodResolver(eventSchema.pick({ title: true, description: true })), defaultValues: { title: "", description: "" } })
   const [eventDate, setEventDate] = useState("")
   const [eventTimeOptions, setEventTimeOptions] = useState(["", ""])
   const [eventSelections, setEventSelections] = useState<Record<string, string[]>>({})
@@ -45,21 +49,16 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
     finally { setBusy(false) }
   }
 
-  const createPoll = async (e: FormEvent) => {
-    e.preventDefault()
-    const cleanOptions = options.map(value => value.trim()).filter(Boolean)
-    if (busy || !question.trim() || cleanOptions.length < 2) return
+  const createPoll = pollForm.handleSubmit(async values => {
+    if (busy) return
+    const cleanOptions = values.options.map(option => option.value.trim())
     const optimisticId = `optimistic-poll-${Date.now()}`
-    const optimisticPoll = {
-      id: optimisticId, question: question.trim(), multiple, closed: false, createdAt: Date.now(),
-      options: cleanOptions.map((label, index) => ({ id: `${optimisticId}-${index}`, label, votes: [] })),
-      myOptionIds: []
-    }
+    const optimisticPoll = { id: optimisticId, question: values.question.trim(), multiple: values.multiple, closed: false, createdAt: Date.now(), options: cleanOptions.map((label, index) => ({ id: `${optimisticId}-${index}`, label, votes: [] })), myOptionIds: [] }
     setFeatures(current => ({ ...current, polls: [optimisticPoll, ...current.polls] }))
-    const saved = await act({ action: "createPoll", question: question.trim(), options: cleanOptions, multiple })
-    if (saved) { setQuestion(""); setOptions(["", ""]) }
+    const saved = await act({ action: "createPoll", question: values.question.trim(), options: cleanOptions, multiple: values.multiple })
+    if (saved) pollForm.reset({ question: "", options: [{ value: "" }, { value: "" }], multiple: false })
     else setFeatures(current => ({ ...current, polls: current.polls.filter(item => item.id !== optimisticId) }))
-  }
+  })
   const submitPollVote = async (poll: any, optionIds: string[]) => {
     if (busy || poll.closed || !optionIds.length) return
     const previous = features
@@ -122,22 +121,18 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
       toast.error(error?.response?.data?.message || "Unable to submit event vote")
     } finally { setBusy(false) }
   }
-  const createEvent = async (e: FormEvent) => {
-    e.preventDefault()
-    if (busy || !eventDate || !eventTitle.trim()) return
+  const createEvent = eventForm.handleSubmit(async values => {
+    if (busy || !eventDate) { if (!eventDate) toast.error("Choose an event date and time"); return }
     const selectedTimes = eventTimeOptions.map(value => value ? new Date(value).getTime() : 0).filter(Boolean)
-    if (selectedTimes.length === 1) { toast.error("Add at least two time options, or clear both to create a fixed-time event."); return }
+    const parsed = eventSchema.safeParse({ title: values.title, description: values.description, startsAt: new Date(eventDate).getTime(), timeOptions: selectedTimes })
+    if (!parsed.success) { toast.error(parsed.error.issues[0]?.message || "Check the event details"); return }
     const optimisticId = `optimistic-event-${Date.now()}`
-    const optimisticEvent = {
-      id: optimisticId, title: eventTitle.trim(), description: eventDescription.trim(),
-      startsAt: new Date(eventDate).getTime(), createdAt: Date.now(), timeOptions: selectedTimes.map((startsAt,index) => ({ id: `${optimisticId}-${index}`, startsAt, votes: [] })),
-      responses: { going: [], maybe: [], "not-going": [] }, myOptionIds: []
-    }
+    const optimisticEvent = { id: optimisticId, title: parsed.data.title, description: parsed.data.description, startsAt: parsed.data.startsAt, createdAt: Date.now(), timeOptions: selectedTimes.map((startsAt,index) => ({ id: `${optimisticId}-${index}`, startsAt, votes: [] })), responses: { going: [], maybe: [], "not-going": [] }, myOptionIds: [] }
     setFeatures(current => ({ ...current, events: [optimisticEvent, ...current.events] }))
-    const saved = await act({ action: "createEvent", title: eventTitle.trim(), description: eventDescription, startsAt: new Date(eventDate).getTime(), ...(selectedTimes.length >= 2 ? { timeOptions: selectedTimes } : {}) })
-    if (saved) { setEventTitle(""); setEventDescription(""); setEventDate(""); setEventTimeOptions(["", ""]) }
+    const saved = await act({ action: "createEvent", title: parsed.data.title, description: parsed.data.description, startsAt: parsed.data.startsAt, ...(selectedTimes.length >= 2 ? { timeOptions: selectedTimes } : {}) })
+    if (saved) { eventForm.reset({ title: "", description: "" }); setEventDate(""); setEventTimeOptions(["", ""]) }
     else setFeatures(current => ({ ...current, events: current.events.filter(item => item.id !== optimisticId) }))
-  }
+  })
 
   return (
     <Dialog open={isOpen} onClose={onClose} className="relative z-50">
