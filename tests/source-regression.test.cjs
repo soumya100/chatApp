@@ -185,8 +185,8 @@ test("community management supports discovery, editing, group organization and o
   assert.match(source, /action: "update"/);
   assert.match(source, /action:"addGroup"/);
   assert.match(source, /action:"removeGroup"/);
-  assert.match(source, /action: "delete"/);
-  assert.match(source, /action: "leave"/);
+  assert.match(source, /type: "delete"/);
+  assert.match(source, /type: "leave"/);
   assert.match(source, /memberInput\[community\.id\]/);
   assert.match(source, /Manage community/);
   assert.match(api, /z\.literal\("delete"\)/);
