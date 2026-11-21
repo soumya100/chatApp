@@ -125,11 +125,22 @@ jobs:
           # Fresh random values per run: nothing credential-shaped is committed
           # to the repository, and nothing generated here outlives the job.
           {
-            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
-            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
-            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
-            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
-          } >> "$GITHUB_ENV"
+            NEXTAUTH_SECRET="$(openssl rand -base64 32)"
+            UPSTASH_REDIS_REST_TOKEN="$(openssl rand -base64 24)"
+            PUSHER_APP_SECRET="$(openssl rand -hex 20)"
+            BLOB_READ_WRITE_TOKEN="$(openssl rand -base64 24)"
+            # Mask ephemeral values before adding them to the job environment.
+            echo "::add-mask::$NEXTAUTH_SECRET"
+            echo "::add-mask::$UPSTASH_REDIS_REST_TOKEN"
+            echo "::add-mask::$PUSHER_APP_SECRET"
+            echo "::add-mask::$BLOB_READ_WRITE_TOKEN"
+            {
+              echo "NEXTAUTH_SECRET=$NEXTAUTH_SECRET"
+              echo "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN"
+              echo "PUSHER_APP_SECRET=$PUSHER_APP_SECRET"
+              echo "BLOB_READ_WRITE_TOKEN=$BLOB_READ_WRITE_TOKEN"
+            } >> "$GITHUB_ENV"
+          }
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -222,11 +233,22 @@ jobs:
           # Fresh random values per run: nothing credential-shaped is committed
           # to the repository, and nothing generated here outlives the job.
           {
-            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
-            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
-            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
-            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
-          } >> "$GITHUB_ENV"
+            NEXTAUTH_SECRET="$(openssl rand -base64 32)"
+            UPSTASH_REDIS_REST_TOKEN="$(openssl rand -base64 24)"
+            PUSHER_APP_SECRET="$(openssl rand -hex 20)"
+            BLOB_READ_WRITE_TOKEN="$(openssl rand -base64 24)"
+            # Mask ephemeral values before adding them to the job environment.
+            echo "::add-mask::$NEXTAUTH_SECRET"
+            echo "::add-mask::$UPSTASH_REDIS_REST_TOKEN"
+            echo "::add-mask::$PUSHER_APP_SECRET"
+            echo "::add-mask::$BLOB_READ_WRITE_TOKEN"
+            {
+              echo "NEXTAUTH_SECRET=$NEXTAUTH_SECRET"
+              echo "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN"
+              echo "PUSHER_APP_SECRET=$PUSHER_APP_SECRET"
+              echo "BLOB_READ_WRITE_TOKEN=$BLOB_READ_WRITE_TOKEN"
+            } >> "$GITHUB_ENV"
+          }
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -396,11 +418,22 @@ jobs:
           # Fresh random values per run: nothing credential-shaped is committed
           # to the repository, and nothing generated here outlives the job.
           {
-            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
-            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
-            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
-            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
-          } >> "$GITHUB_ENV"
+            NEXTAUTH_SECRET="$(openssl rand -base64 32)"
+            UPSTASH_REDIS_REST_TOKEN="$(openssl rand -base64 24)"
+            PUSHER_APP_SECRET="$(openssl rand -hex 20)"
+            BLOB_READ_WRITE_TOKEN="$(openssl rand -base64 24)"
+            # Mask ephemeral values before adding them to the job environment.
+            echo "::add-mask::$NEXTAUTH_SECRET"
+            echo "::add-mask::$UPSTASH_REDIS_REST_TOKEN"
+            echo "::add-mask::$PUSHER_APP_SECRET"
+            echo "::add-mask::$BLOB_READ_WRITE_TOKEN"
+            {
+              echo "NEXTAUTH_SECRET=$NEXTAUTH_SECRET"
+              echo "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN"
+              echo "PUSHER_APP_SECRET=$PUSHER_APP_SECRET"
+              echo "BLOB_READ_WRITE_TOKEN=$BLOB_READ_WRITE_TOKEN"
+            } >> "$GITHUB_ENV"
+          }
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
