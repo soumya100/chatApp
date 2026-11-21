@@ -6,12 +6,15 @@ const path = require("node:path");
 const source = fs.readFileSync(path.join(__dirname, "../src/components/Chat/GroupFeaturesPanel.tsx"), "utf8");
 
 test("event poll UI: creation exposes two default time choices and caps alternatives at six", () => {
-  assert.match(source, /useState\(\[\"\", \"\"\]\)/);
-  assert.match(source, /prev\.length\s*<\s*6/);
+  assert.match(source, /defaultValues: \{ title: \"\", description: \"\", startsAt: \"\", timeOptions: \[\"\", \"\"\] \}/);
+  assert.match(source, /useFieldArray\(\{ control: eventForm\.control, name: \"timeOptions\" \}\)/);
+  assert.match(source, /eventTimeFields\.fields\.length<6/);
+  assert.match(source, /eventTimeFields\.append\(\"\"\)/);
   assert.match(source, /DateTimePicker/);
   assert.doesNotMatch(source, /type=\"datetime-local\"/);
-  assert.match(source, /timeOptions\.length !== 1/);
-  assert.match(source, /timeOptions: selectedTimes/);
+  assert.match(source, /values\.filter\(Boolean\)\.length !== 1/);
+  assert.match(source, /values\.timeOptions\.map\(value => value \? new Date\(value\)\.getTime\(\) : 0\)/);
+  assert.match(source, /selectedTimes\.length >= 2 \? \{ timeOptions: selectedTimes \} : \{\}/);
 });
 
 test("event poll UI: vote selections are controlled and submitted to the event API", () => {
