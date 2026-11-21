@@ -6,7 +6,7 @@ const path = require("node:path");
 const source = fs.readFileSync(path.join(__dirname, "../src/components/Chat/GroupFeaturesPanel.tsx"), "utf8");
 
 test("event poll UI: creation exposes two default time choices and caps alternatives at six", () => {
-  assert.match(source, /defaultValues: \{ title: \"\", description: \"\", startsAt: \"\", timeOptions: \[\"\", \"\"\] \}/);
+  assert.match(source, /defaultValues: \\{ title: "", description: "", startsAt: "", timeOptions: \\[\\{ value: "" \\}, \\{ value: "" \\}\\] \\}/);
   assert.match(source, /useFieldArray\(\{ control: eventForm\.control, name: \"timeOptions\" \}\)/);
   assert.match(source, /eventTimeFields\.fields\.length<6/);
   assert.match(source, /eventTimeFields\.append\(\"\"\)/);
