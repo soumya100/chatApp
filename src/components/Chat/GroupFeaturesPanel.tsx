@@ -50,7 +50,6 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
     const cleanOptions = options.map(value => value.trim()).filter(Boolean)
     if (busy || !question.trim() || cleanOptions.length < 2) return
     const optimisticId = `optimistic-poll-${Date.now()}`
-    const previous = features
     const optimisticPoll = {
       id: optimisticId, question: question.trim(), multiple, closed: false, createdAt: Date.now(),
       options: cleanOptions.map((label, index) => ({ id: `${optimisticId}-${index}`, label, votes: [] })),
