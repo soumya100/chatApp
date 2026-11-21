@@ -160,13 +160,14 @@ jobs:
       - name: Build production bundle
         run: yarn build
 
-      - name: Install pinned Playwright and browser engines
+      - name: Install pinned Playwright, browser engines and Linux dependencies
         run: |
           npm install --global playwright@1.65.1
-          # Avoid --with-deps: it triggers a large apt transaction on the hosted runner
-          # and exhausted the 45-minute job timeout before smoke tests could start.
-          # Browser binaries stay pinned to the Playwright version above.
+          # Install the exact OS libraries required by all three pinned engines.
+          # Browser downloads alone do not install WebKit's GTK/GStreamer stack;
+          # Chromium and Firefox may start while WebKit fails at launch.
           playwright install chromium firefox webkit
+          playwright install-deps chromium firefox webkit
 
       - name: Start production server
         run: |
