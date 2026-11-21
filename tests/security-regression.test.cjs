@@ -141,7 +141,7 @@ test("CI installs no OS packages and the Redis suites use the in-repo RESP clien
 
 test("pull-request workflows keep repository secrets out of validation jobs and isolate gated Vercel deployment", () => {
   const workflowDirectory = path.join(root, ".github", "workflows");
-  const workflowFiles = fs.readdirSync(workflowDirectory).filter(file => /\\.ya?ml$/.test(file));
+  const workflowFiles = fs.readdirSync(workflowDirectory).filter(file => /\.ya?ml$/.test(file));
   assert.ok(workflowFiles.length > 0, "workflow definitions must exist");
   for (const file of workflowFiles) {
     const source = fs.readFileSync(path.join(workflowDirectory, file), "utf8");
@@ -149,7 +149,7 @@ test("pull-request workflows keep repository secrets out of validation jobs and 
     if (!runsOnPullRequests) continue;
 
     if (file !== "chatapp-ci.yml") {
-      assert.doesNotMatch(source, /secrets\\.[A-Z_]+/, `${file} runs on pull_request and must not reference secrets`);
+      assert.doesNotMatch(source, /secrets\.[A-Z_]+/, file + " runs on pull_request and must not reference secrets");
       continue;
     }
 
@@ -160,11 +160,11 @@ test("pull-request workflows keep repository secrets out of validation jobs and 
     assert.notEqual(deploymentIndex, -1, "the gated Vercel preview job must exist");
     const validationJobs = source.slice(0, deploymentIndex);
     const deploymentJob = source.slice(deploymentIndex);
-    assert.doesNotMatch(validationJobs, /secrets\\.[A-Z_]+/, "PR validation and security jobs must remain tokenless");
-    assert.match(deploymentJob, /needs:\\s*\\n\\s*- pr-quality-gate/, "preview deployment must depend on the PR quality gate");
-    assert.match(deploymentJob, /needs\\.pr-quality-gate\\.result == 'success'/, "preview deployment must require a successful quality gate");
-    assert.match(deploymentJob, /github\\.event\\.pull_request\\.head\\.repo\\.full_name == github\\.repository/, "preview deployment must reject fork PRs");
-    const secretReferences = [...deploymentJob.matchAll(/secrets\\.([A-Z_]+)/g)].map(match => match[1]);
+    assert.doesNotMatch(validationJobs, /secrets\.[A-Z_]+/, "PR validation and security jobs must remain tokenless");
+    assert.match(deploymentJob, /needs:\s*\n\s*- pr-quality-gate/, "preview deployment must depend on the PR quality gate");
+    assert.match(deploymentJob, /needs\.pr-quality-gate\.result == 'success'/, "preview deployment must require a successful quality gate");
+    assert.match(deploymentJob, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/, "preview deployment must reject fork PRs");
+    const secretReferences = [...deploymentJob.matchAll(/secrets\.([A-Z_]+)/g)].map(match => match[1]);
     assert.ok(secretReferences.length > 0, "the preview deployment must use configured Vercel credentials");
     assert.deepEqual([...new Set(secretReferences)].sort(), ["VERCEL_ORG_ID", "VERCEL_PROJECT_ID", "VERCEL_TOKEN"]);
   }
