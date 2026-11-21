@@ -178,13 +178,20 @@ test("dark application canvas matches the login slate background", () => {
   assert.match(layout, /color:\s*"#020617"/);
 });
 
-test("community member actions are scoped per community and prevent duplicate submissions", () => {
+test("community management supports discovery, editing, group organization and owner deletion", () => {
   const source = read("src/components/Chat/CommunitiesPanel.tsx");
-  assert.match(source, /memberIds\[community\.id\]/);
-  assert.match(source, /addingTo/);
-  assert.match(source, /disabled=\{addingTo===item\.id\}/);
-  assert.match(source, /finally \{ setAddingTo\(null\) \}/);
-  assert.match(source, /inviteBusyId/);
+  const api = read("src/app/api/community/[communityId]/route.ts");
+  assert.match(source, /Search communities/);
+  assert.match(source, /action: "update"/);
+  assert.match(source, /action:"addGroup"/);
+  assert.match(source, /action:"removeGroup"/);
+  assert.match(source, /action:"delete"/);
+  assert.match(source, /action:"leave"/);
+  assert.match(source, /memberInput\[community\.id\]/);
+  assert.match(source, /Manage community/);
+  assert.match(api, /z\.literal\("delete"\)/);
+  assert.match(api, /Only the community owner can delete it/);
+  assert.match(api, /user:\$\{memberId\}:communities/);
 });
 
 test("group activity refreshes without hiding the panel and disables duplicate event responses", () => {
