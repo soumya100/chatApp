@@ -20,9 +20,11 @@ on:
 permissions:
   contents: read
 
+# Do not cancel an in-flight validation run when a newer commit is pushed.
+# GitHub may keep one pending run per group; active validation is allowed to finish.
 concurrency:
-  group: chatapp-ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: chatapp-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   unit-and-static:
