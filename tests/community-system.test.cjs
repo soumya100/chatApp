@@ -286,9 +286,9 @@ test("community listing marks the owner separately from community admins", async
   const ownerListing = await status(await communityCreate.GET());
   assert.equal(ownerListing.data.communities[0].isOwner, true);
   assert.equal(ownerListing.data.communities[0].isAdmin, true);
-  h.setSession("member");
   const memberAdded = await status(await communityMutate.POST(h.request({ action: "addMember", memberId: "member" }), { params: Promise.resolve({ communityId: created.data.community.id }) }));
   assert.equal(memberAdded.status, 200);
+  h.setSession("member");
   const memberListing = await status(await communityCreate.GET());
   assert.equal(memberListing.data.communities[0].isOwner, false);
   assert.equal(memberListing.data.communities[0].isAdmin, false);
