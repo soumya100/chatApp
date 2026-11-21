@@ -154,7 +154,6 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
                 <div className="flex flex-wrap items-center justify-between gap-2"><button type="button" onClick={()=>{if(pollFields.fields.length<10)pollFields.append({value:""})}} className="text-xs text-indigo-600">+ Add option</button><label className="text-xs flex gap-2 items-center cursor-pointer"><input type="checkbox" {...pollForm.register("multiple")} className="h-4 w-4 rounded border-slate-300 accent-indigo-600 focus:ring-2 focus:ring-indigo-500/20 dark:border-white/20"/> Allow multiple answers</label><button disabled={busy || pollForm.formState.isSubmitting} className="rounded-xl bg-indigo-600 text-white px-3 py-2 text-xs font-semibold disabled:opacity-50">Create poll</button></div>
                 {pollForm.formState.errors.question && <p role="alert" className="text-xs text-rose-600">{pollForm.formState.errors.question.message}</p>}
                 {pollForm.formState.errors.options?.root && <p role="alert" className="text-xs text-rose-600">{pollForm.formState.errors.options.root.message}</p>}
-                {pollForm.formState.errors.options?.map((error,index)=>error?.value&&<p key={index} role="alert" className="text-xs text-rose-600">Option {index+1}: {error.value.message}</p>)}
               </form>
             </section>
             <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
