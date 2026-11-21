@@ -7,6 +7,7 @@ import { Dialog } from "@headlessui/react"
 import { CalendarDays, Check, Loader2, Megaphone, X, Users, ChevronLeft, ChevronRight } from "lucide-react"
 import { pusherClient } from "@/lib/pusher"
 import { toPusherKey } from "@/lib/utils"
+import DateTimePicker from "@/components/Chat/DateTimePicker"
 
 interface Props { isOpen: boolean; onClose: () => void; groupId: string; isAdmin: boolean }
 type FeatureData = { polls: any[]; events: any[]; announcements: any[] }
@@ -46,8 +47,19 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
 
   const createPoll = async (e: FormEvent) => {
     e.preventDefault()
-    const saved = await act({ action: "createPoll", question, options: options.map(x => x.trim()).filter(Boolean), multiple })
+    const cleanOptions = options.map(value => value.trim()).filter(Boolean)
+    if (busy || !question.trim() || cleanOptions.length < 2) return
+    const optimisticId = `optimistic-poll-${Date.now()}`
+    const previous = features
+    const optimisticPoll = {
+      id: optimisticId, question: question.trim(), multiple, closed: false, createdAt: Date.now(),
+      options: cleanOptions.map((label, index) => ({ id: `${optimisticId}-${index}`, label, votes: [] })),
+      myOptionIds: []
+    }
+    setFeatures(current => ({ ...current, polls: [optimisticPoll, ...current.polls] }))
+    const saved = await act({ action: "createPoll", question: question.trim(), options: cleanOptions, multiple })
     if (saved) { setQuestion(""); setOptions(["", ""]) }
+    else setFeatures(current => ({ ...current, polls: current.polls.filter(item => item.id !== optimisticId) }))
   }
   const togglePollOption = (poll: any, optionId: string) => {
     if (!poll.multiple) {
@@ -83,11 +95,19 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
 
   const createEvent = async (e: FormEvent) => {
     e.preventDefault()
-    if (!eventDate) return
+    if (busy || !eventDate || !eventTitle.trim()) return
     const selectedTimes = eventTimeOptions.map(value => value ? new Date(value).getTime() : 0).filter(Boolean)
     if (selectedTimes.length === 1) { toast.error("Add at least two time options, or clear both to create a fixed-time event."); return }
-    const saved = await act({ action: "createEvent", title: eventTitle, description: eventDescription, startsAt: new Date(eventDate).getTime(), ...(selectedTimes.length >= 2 ? { timeOptions: selectedTimes } : {}) })
+    const optimisticId = `optimistic-event-${Date.now()}`
+    const optimisticEvent = {
+      id: optimisticId, title: eventTitle.trim(), description: eventDescription.trim(),
+      startsAt: new Date(eventDate).getTime(), createdAt: Date.now(), timeOptions: selectedTimes.map((startsAt,index) => ({ id: `${optimisticId}-${index}`, startsAt, votes: [] })),
+      responses: { going: [], maybe: [], "not-going": [] }, myOptionIds: []
+    }
+    setFeatures(current => ({ ...current, events: [optimisticEvent, ...current.events] }))
+    const saved = await act({ action: "createEvent", title: eventTitle.trim(), description: eventDescription, startsAt: new Date(eventDate).getTime(), ...(selectedTimes.length >= 2 ? { timeOptions: selectedTimes } : {}) })
     if (saved) { setEventTitle(""); setEventDescription(""); setEventDate(""); setEventTimeOptions(["", ""]) }
+    else setFeatures(current => ({ ...current, events: current.events.filter(item => item.id !== optimisticId) }))
   }
 
   return (
@@ -125,7 +145,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
                     <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">Start time <input type="time" value={eventDate.slice(11,16)||"18:00"} onChange={e=>{const date=eventDate.slice(0,10);if(date)setEventDate(`${date}T${e.target.value}`)}} className="border-0 bg-transparent p-0 text-xs font-semibold text-indigo-600 outline-none dark:text-indigo-300"/></label>
                   </div>
                 </div>
-                <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-400/20 dark:bg-indigo-400/[0.06]"><p className="mb-2 text-xs font-semibold">Let the group choose a time</p><p className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">Add at least two alternatives to enable voting.</p>{eventTimeOptions.map((value,index)=><input key={index} type="datetime-local" value={value} onChange={e=>setEventTimeOptions(prev=>prev.map((item,i)=>i===index?e.target.value:item))} className="mb-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs shadow-sm outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:border-indigo-400"/>)}<button type="button" onClick={()=>setEventTimeOptions(prev=>prev.length<6?[...prev,""]:prev)} disabled={eventTimeOptions.length>=6} className="text-xs font-medium text-indigo-600 disabled:opacity-40">+ Add another time</button></div>
+                <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-400/20 dark:bg-indigo-400/[0.06]"><p className="mb-2 text-xs font-semibold">Let the group choose a time</p><p className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">Add at least two alternatives to enable voting.</p>{eventTimeOptions.map((value,index)=><div key={index} className="mb-2 flex items-center gap-2"><div className="min-w-0 flex-1"><DateTimePicker label={`Alternative time ${index+1}`} value={value} disabled={busy} onChange={next=>setEventTimeOptions(prev=>prev.map((item,i)=>i===index?next:item))}/></div>{eventTimeOptions.length>2&&<button type="button" aria-label={`Remove alternative ${index+1}`} onClick={()=>setEventTimeOptions(prev=>prev.filter((_,i)=>i!==index))} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-400/10"><X size={14}/></button>}</div>)}<button type="button" onClick={()=>setEventTimeOptions(prev=>prev.length<6?[...prev,""]:prev)} disabled={eventTimeOptions.length>=6} className="text-xs font-medium text-indigo-600 disabled:opacity-40">+ Add another time</button></div>
                 <textarea value={eventDescription} onChange={e=>setEventDescription(e.target.value)} placeholder="Details (optional)" rows={2} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07]"/>
                 <button disabled={busy || !eventTitle.trim() || !eventDate} className="rounded-xl bg-indigo-600 text-white px-3 py-2 text-xs font-semibold disabled:opacity-50">Create event</button>
               </form>
