@@ -8,7 +8,7 @@ const source = fs.readFileSync(path.join(__dirname, "../src/components/Chat/Grou
 test("event poll UI: creation exposes two default time choices and caps alternatives at six", () => {
   assert.match(source, /useState\(\[\"\", \"\"\]\)/);
   assert.match(source, /prev\.length\s*<\s*6/);
-  assert.match(source, /type=\"datetime-local\"/);
+  assert.match(source, /DateTimePicker/);\n  assert.doesNotMatch(source, /type=\"datetime-local\"/);
   assert.match(source, /selectedTimes\.length === 1/);
   assert.match(source, /timeOptions: selectedTimes/);
 });
@@ -54,4 +54,13 @@ test("event poll UI: user-provided event content is rendered as React text, neve
   assert.match(source, /\{event\.title\}/);
   assert.match(source, /\{event\.description\}/);
   assert.doesNotMatch(source, /dangerouslySetInnerHTML/);
+});
+
+test("event and poll creation are optimistic and remove temporary entries on API failure", () => {
+  assert.match(source, /optimistic-poll-/);
+  assert.match(source, /optimistic-event-/);
+  assert.match(source, /polls: \[optimisticPoll, \.\.\.current\.polls\]/);
+  assert.match(source, /events: \[optimisticEvent, \.\.\.current\.events\]/);
+  assert.match(source, /polls: current\.polls\.filter\(item => item\.id !== optimisticId\)/);
+  assert.match(source, /events: current\.events\.filter\(item => item\.id !== optimisticId\)/);
 });
