@@ -67,8 +67,10 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
     setFeatures(current => ({ ...current, polls: current.polls.map(item => item.id !== poll.id ? item : {
       ...item, myOptionIds: optionIds,
       options: item.options.map((option: any) => {
-        const votes = (option.votes || []).filter((id: string) => id !== "__optimistic_current_user__")
-        return { ...option, votes: selectedIds.has(option.id) ? [...votes, "__optimistic_current_user__"] : votes }
+        const votes = [...(option.votes || [])]
+        if ((poll.myOptionIds || []).includes(option.id)) votes.pop()
+        if (selectedIds.has(option.id)) votes.push("__optimistic_current_user__")
+        return { ...option, votes }
       })
     }) }))
     const saved = await act({ action: "votePoll", pollId: poll.id, optionIds })
@@ -106,8 +108,10 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
     setFeatures(current => ({ ...current, events: current.events.map(item => item.id !== event.id ? item : {
       ...item, myOptionIds: optionIds,
       timeOptions: (item.timeOptions || []).map((option: any) => {
-        const votes = (option.votes || []).filter((id: string) => id !== "__optimistic_current_user__")
-        return { ...option, votes: selectedIds.has(option.id) ? [...votes, "__optimistic_current_user__"] : votes }
+        const votes = [...(option.votes || [])]
+        if ((event.myOptionIds || []).includes(option.id)) votes.pop()
+        if (selectedIds.has(option.id)) votes.push("__optimistic_current_user__")
+        return { ...option, votes }
       })
     }) }))
     try {
