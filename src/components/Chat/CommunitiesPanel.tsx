@@ -33,6 +33,7 @@ const CommunitiesPanel: FC<Props> = ({ groups }) => {
   const [groupInput, setGroupInput] = useState<Record<string, string>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [actionId, setActionId] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<{ type: "delete" | "leave"; community: Community } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -92,17 +93,15 @@ const CommunitiesPanel: FC<Props> = ({ groups }) => {
   const acceptInvite = (community: Community) => void mutate(community, { action: "acceptInvite" }, "You joined the community")
   const declineInvite = (community: Community) => void mutate(community, { action: "declineInvite" }, "Invitation declined")
 
-  const deleteCommunity = async (community: Community) => {
-    if (!window.confirm(`Delete “${community.name}”? This removes the community and unlinks its groups. The groups themselves will remain.`)) return
-    await mutate(community, { action: "delete" }, "Community deleted")
-  }
-
-  const leaveCommunity = async (community: Community) => {
-    if (!window.confirm(`Leave “${community.name}”?`)) return
-    await mutate(community, { action: "leave" }, "You left the community")
+  const confirmPendingAction = async () => {
+    if (!pendingAction) return
+    const { type, community } = pendingAction
+    const saved = await mutate(community, { action: type }, type === "delete" ? "Community deleted" : "You left the community")
+    if (saved) setPendingAction(null)
   }
 
   return (
+    <>
     <section className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/70 sm:p-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -154,8 +153,8 @@ const CommunitiesPanel: FC<Props> = ({ groups }) => {
                 <div className="flex flex-wrap items-center gap-1.5">
                   {editing ? <><button type="button" disabled={!!actionId || draft.name.trim().length<2} onClick={() => void saveEdit(item)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50"><Save size={12}/> Save</button><button type="button" onClick={() => setEditingId(null)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] text-slate-600 dark:border-white/10 dark:text-slate-300">Cancel</button></>
                   : item.isAdmin && <button type="button" onClick={() => {setDraft({name:item.name,description:item.description||""});setEditingId(item.id);setExpandedId(item.id)}} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/[0.05]"><Pencil size={12}/> Edit</button>}
-                  {item.isOwner ? <button type="button" disabled={!!actionId} onClick={() => void deleteCommunity(item)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-400/20 dark:text-rose-300 dark:hover:bg-rose-400/10"><Trash2 size={12}/> Delete</button>
-                  : <button type="button" disabled={!!actionId} onClick={() => void leaveCommunity(item)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:text-slate-300"><LogOut size={12}/> Leave</button>}
+                  {item.isOwner ? <button type="button" disabled={!!actionId} onClick={() => setPendingAction({ type: "delete", community: item })} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-400/20 dark:text-rose-300 dark:hover:bg-rose-400/10"><Trash2 size={12}/> Delete</button>
+                  : <button type="button" disabled={!!actionId} onClick={() => setPendingAction({ type: "leave", community: item })} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:text-slate-300"><LogOut size={12}/> Leave</button>}
                 </div>
               </div>
             </div>
@@ -181,6 +180,15 @@ const CommunitiesPanel: FC<Props> = ({ groups }) => {
         <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-[11px] text-slate-500 dark:text-slate-400">{selected.length} groups selected</p><button type="submit" disabled={busy || name.trim().length<2} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:ring-offset-slate-950">{busy?<Loader2 size={14} className="animate-spin"/>:<Plus size={14}/>} {busy ? "Creating…" : "Create community"}</button></div>
       </form>
     </section>
+      {pendingAction && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation">
+        <div role="dialog" aria-modal="true" aria-labelledby="community-confirm-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-slate-900">
+          <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${pendingAction.type === "delete" ? "bg-rose-50 text-rose-600 dark:bg-rose-400/10 dark:text-rose-300" : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300"}`}>{pendingAction.type === "delete" ? <Trash2 size={18}/> : <LogOut size={18}/>}</div>
+          <h3 id="community-confirm-title" className="text-sm font-semibold text-slate-900 dark:text-slate-100">{pendingAction.type === "delete" ? "Delete this community?" : "Leave this community?"}</h3>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{pendingAction.type === "delete" ? `“${pendingAction.community.name}” will be deleted and its groups unlinked. The group chats and their messages will remain.` : `You will leave “${pendingAction.community.name}” and it will no longer appear in your communities.`}</p>
+          <div className="mt-5 flex justify-end gap-2"><button type="button" disabled={!!actionId} onClick={() => setPendingAction(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/[0.05]">Cancel</button><button type="button" disabled={!!actionId} onClick={() => void confirmPendingAction()} className={`rounded-lg px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 ${pendingAction.type === "delete" ? "bg-rose-600 hover:bg-rose-500" : "bg-slate-700 hover:bg-slate-600"}`}>{actionId ? "Working…" : pendingAction.type === "delete" ? "Delete community" : "Leave community"}</button></div>
+        </div>
+      </div>}
+    </>
   )
 }
 export default CommunitiesPanel
