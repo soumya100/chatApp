@@ -16,7 +16,7 @@ test("event poll UI: creation exposes two default time choices and caps alternat
 
 test("event poll UI: vote selections are controlled and submitted to the event API", () => {
   assert.match(source, /checked=\{\(eventSelections\[event\.id\]\?\?event\.myOptionIds\?\?\[\]\)\.includes\(option\.id\)\}/);
-  assert.match(source, /action:\"voteEvent\"/);
+  assert.match(source, /action:\s*["]voteEvent["]/);
   assert.match(source, /optionIds \}\)/);
   assert.match(source, /option\.votes\?\.length/);
 });
