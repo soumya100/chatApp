@@ -257,3 +257,39 @@ test("community mutations: a non-final leave transfers ownership to the next mem
   assert.equal(leave.data.deleted, false, "other members remain");
   assert.equal(leave.data.community.ownerId, "admin", "ownership moves to the next remaining member");
 });
+
+test("community delete: owner removes indexes, invitations and group links atomically", async () => {
+  h.reset();
+  const created = await call(communityCreate, { name: "Workspace", groupIds: ["g1"] });
+  const communityId = created.data.community.id;
+  const ctx = { params: Promise.resolve({ communityId }) };
+  const post = async payload => status(await communityMutate.POST(h.request(payload), ctx));
+  await post({ action: "inviteMember", memberId: "member" });
+
+  h.setSession("member");
+  assert.equal((await post({ action: "delete" })).status, 403, "members cannot delete a community they do not own");
+  h.setSession("owner");
+  const deleted = await post({ action: "delete" });
+  assert.equal(deleted.status, 200);
+  assert.equal(deleted.data.deleted, true);
+  assert.equal(h.getKv(`community:${communityId}`), null);
+  assert.ok(!h.getSetMembers("user:owner:communities").includes(communityId));
+  assert.ok(!h.getSetMembers("user:member:communities").includes(communityId));
+  assert.ok(!h.getSetMembers("user:member:community-invites").includes(communityId));
+  assert.deepEqual(h.getSetMembers(`community:${communityId}:invites`), []);
+  assert.equal(h.getGroup().communityId, undefined, "the group survives but is unlinked");
+});
+
+test("community listing marks the owner separately from community admins", async () => {
+  h.reset();
+  const created = await call(communityCreate, { name: "Owned" });
+  const ownerListing = await status(await communityCreate.GET());
+  assert.equal(ownerListing.data.communities[0].isOwner, true);
+  assert.equal(ownerListing.data.communities[0].isAdmin, true);
+  h.setSession("member");
+  const memberAdded = await status(await communityMutate.POST(h.request({ action: "addMember", memberId: "member" }), { params: Promise.resolve({ communityId: created.data.community.id }) }));
+  assert.equal(memberAdded.status, 200);
+  const memberListing = await status(await communityCreate.GET());
+  assert.equal(memberListing.data.communities[0].isOwner, false);
+  assert.equal(memberListing.data.communities[0].isAdmin, false);
+});
