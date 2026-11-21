@@ -84,7 +84,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ communi
       } else if (!isMember) {
         return Response.json({ message: "Not a community member" }, { status: 403 })
       }
-      if (action === "delete" && userId !== community.ownerId) {\n        return Response.json({ message: "Only the community owner can delete it" }, { status: 403 })\n      }\n      if (action !== "leave" && action !== "delete" && action !== "acceptInvite" && action !== "declineInvite" && !isAdmin) {
+      if (action === "delete" && userId !== community.ownerId) {
+        return Response.json({ message: "Only the community owner can delete it" }, { status: 403 })
+      }
+      if (action !== "leave" && action !== "delete" && action !== "acceptInvite" && action !== "declineInvite" && !isAdmin) {
         return Response.json({ message: "Only community admins can manage it" }, { status: 403 })
       }
 
