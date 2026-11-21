@@ -8,15 +8,16 @@ const source = fs.readFileSync(path.join(__dirname, "../src/components/Chat/Grou
 test("event poll UI: creation exposes two default time choices and caps alternatives at six", () => {
   assert.match(source, /useState\(\[\"\", \"\"\]\)/);
   assert.match(source, /prev\.length\s*<\s*6/);
-  assert.match(source, /type=\"datetime-local\"/);
-  assert.match(source, /selectedTimes\.length === 1/);
+  assert.match(source, /DateTimePicker/);
+  assert.doesNotMatch(source, /type=\"datetime-local\"/);
+  assert.match(source, /timeOptions\.length !== 1/);
   assert.match(source, /timeOptions: selectedTimes/);
 });
 
 test("event poll UI: vote selections are controlled and submitted to the event API", () => {
   assert.match(source, /checked=\{\(eventSelections\[event\.id\]\?\?event\.myOptionIds\?\?\[\]\)\.includes\(option\.id\)\}/);
-  assert.match(source, /action:\"voteEvent\"/);
-  assert.match(source, /optionIds:eventSelections\[event\.id\]\?\?event\.myOptionIds\?\?\[\]/);
+  assert.match(source, /action:\s*["]voteEvent["]/);
+  assert.match(source, /optionIds \}\)/);
   assert.match(source, /option\.votes\?\.length/);
 });
 
@@ -54,4 +55,33 @@ test("event poll UI: user-provided event content is rendered as React text, neve
   assert.match(source, /\{event\.title\}/);
   assert.match(source, /\{event\.description\}/);
   assert.doesNotMatch(source, /dangerouslySetInnerHTML/);
+});
+
+test("event and poll creation are optimistic and remove temporary entries on API failure", () => {
+  assert.match(source, /optimistic-poll-/);
+  assert.match(source, /optimistic-event-/);
+  assert.match(source, /polls: \[optimisticPoll, \.\.\.current\.polls\]/);
+  assert.match(source, /events: \[optimisticEvent, \.\.\.current\.events\]/);
+  assert.match(source, /polls: current\.polls\.filter\(item => item\.id !== optimisticId\)/);
+  assert.match(source, /events: current\.events\.filter\(item => item\.id !== optimisticId\)/);
+});
+
+test("poll and event votes update selection and result counts optimistically, then restore on failure", () => {
+  assert.match(source, /setPollSelections\(current => \(\{ \.\.\.current, \[poll\.id\]: next \}\)\)/);
+  assert.match(source, /setEventSelections\(prev=>\{/);
+  assert.match(source, /setFeatures\(current => \(\{ \.\.\.current, polls:/);
+  assert.match(source, /setFeatures\(current => \(\{ \.\.\.current, events:/);
+  assert.match(source, /setFeatures\(previous\)/);
+  assert.match(source, /submitPollSelections\(poll\)/);
+  assert.match(source, /submitEventVote\(event\)/);
+});
+
+test("poll and event forms use React Hook Form, Zod and inline validation without native browser validation", () => {
+  assert.match(source, /useForm/);
+  assert.match(source, /useFieldArray/);
+  assert.match(source, /zodResolver/);
+  assert.match(source, /pollSchema/);
+  assert.match(source, /eventSchema/);
+  assert.match(source, /noValidate/);
+  assert.doesNotMatch(source, /window\.alert\(/);
 });
