@@ -8,7 +8,7 @@ export async function fetchRedis(command: Command, ...args: (string | number)[])
         throw new Error('Missing Upstash Redis environment variables')
     }
 
-    // Use POST with JSON array body to avoid URL path concatenation issues with slashes or special characters
+    // Use POST with JSON array body to avoid URL path concatenation issues with slashes and special characters
     const response = await fetch(upstashRedisRestUrl, {
         method: 'POST',
         headers: {
