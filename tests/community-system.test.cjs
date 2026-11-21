@@ -264,7 +264,7 @@ test("community delete: owner removes indexes, invitations and group links atomi
   const communityId = created.data.community.id;
   const ctx = { params: Promise.resolve({ communityId }) };
   const post = async payload => status(await communityMutate.POST(h.request(payload), ctx));
-  await post({ action: "inviteMember", memberId: "member" });
+  await post({ action: "inviteMember", memberId: "other" });
 
   h.setSession("member");
   assert.equal((await post({ action: "delete" })).status, 403, "members cannot delete a community they do not own");
@@ -275,7 +275,7 @@ test("community delete: owner removes indexes, invitations and group links atomi
   assert.equal(h.getKv(`community:${communityId}`), null);
   assert.ok(!h.getSetMembers("user:owner:communities").includes(communityId));
   assert.ok(!h.getSetMembers("user:member:communities").includes(communityId));
-  assert.ok(!h.getSetMembers("user:member:community-invites").includes(communityId));
+  assert.ok(!h.getSetMembers("user:other:community-invites").includes(communityId));
   assert.deepEqual(h.getSetMembers(`community:${communityId}:invites`), []);
   assert.equal(h.getGroup().communityId, undefined, "the group survives but is unlinked");
 });
