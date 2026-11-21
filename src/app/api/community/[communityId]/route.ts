@@ -14,7 +14,8 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("acceptInvite") }),
   z.object({ action: z.literal("declineInvite") }),
   z.object({ action: z.literal("removeMember"), memberId: z.string().min(1) }),
-  z.object({ action: z.literal("leave") })
+  z.object({ action: z.literal("leave") }),
+  z.object({ action: z.literal("delete") })
 ])
 
 const atomicCommunityMutation = `
@@ -83,7 +84,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ communi
       } else if (!isMember) {
         return Response.json({ message: "Not a community member" }, { status: 403 })
       }
-      if (action !== "leave" && action !== "acceptInvite" && action !== "declineInvite" && !isAdmin) {
+      if (action === "delete" && userId !== community.ownerId) {\n        return Response.json({ message: "Only the community owner can delete it" }, { status: 403 })\n      }\n      if (action !== "leave" && action !== "delete" && action !== "acceptInvite" && action !== "declineInvite" && !isAdmin) {
         return Response.json({ message: "Only community admins can manage it" }, { status: 403 })
       }
 
@@ -164,6 +165,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ communi
         next.memberIds = next.memberIds.filter((id: string) => id !== targetId)
         next.adminIds = next.adminIds.filter((id: string) => id !== targetId)
         ops.push({ type: "srem", key: `user:${targetId}:communities`, value: communityId })
+      } else if (parsed.data.action === "delete") {
+        deleteCommunity = true
+        for (const memberId of next.memberIds) {
+          ops.push({ type: "srem", key: `user:${memberId}:communities`, value: communityId })
+        }
+        const inviteIds = await db.smembers(`community:${communityId}:invites`) as string[]
+        for (const inviteeId of inviteIds || []) {
+          ops.push({ type: "srem", key: `user:${inviteeId}:community-invites`, value: communityId })
+        }
+        ops.push({ type: "del", key: `community:${communityId}:invites` })
+        for (const groupId of next.groupIds) {
+          const groupKey = `group:${groupId}`
+          const groupRaw = await db.get(groupKey)
+          if (groupRaw) {
+            const group = decode<Group>(groupRaw)
+            if (group.communityId === communityId) {
+              const { communityId: _communityId, ...withoutCommunity } = group
+              ops.push({ type: "casSet", key: groupKey, expected: typeof groupRaw === "string" ? groupRaw : JSON.stringify(groupRaw), value: JSON.stringify({ ...withoutCommunity, updatedAt: Date.now() }) })
+            }
+          }
+        }
       } else if (parsed.data.action === "leave") {
         next.memberIds = next.memberIds.filter((id: string) => id !== userId)
         next.adminIds = next.adminIds.filter((id: string) => id !== userId)
