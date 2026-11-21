@@ -6,7 +6,7 @@ import ChatInput from './ChatInput'
 import { pusherClient } from '@/lib/pusher'
 import { toPusherKey } from '@/lib/utils'
 import { memberInvitesAllowed, resolveAdminIds } from '@/lib/group'
-import { Search, UserPlus, X, Settings as SettingsIcon, Sparkles, Users } from 'lucide-react'
+import { Search, UserPlus, X, Settings as SettingsIcon, Sparkles, Users, TimerReset } from 'lucide-react'
 import axios from 'axios'
 import { nanoid } from 'nanoid'
 import toast from 'react-hot-toast'
@@ -486,6 +486,12 @@ const Chat: FC<ChatProps> = ({
       </div>
 
       {isGroupChat && <PinnedMessagesBanner groupId={groupId} onJumpTo={jumpToPinnedMessage} />}
+      {isGroupChat && (group?.settings?.disappearingMessagesSeconds || 0) > 0 && (
+        <div role='status' className='mx-4 mt-2 flex items-center justify-center gap-2 rounded-xl border border-violet-200/70 bg-violet-50/80 px-3 py-2 text-center text-[11px] text-violet-700 dark:border-violet-400/15 dark:bg-violet-400/[0.06] dark:text-violet-200'>
+          <TimerReset size={13} className='shrink-0' />
+          <span>Disappearing messages are on. New messages disappear after {group!.settings!.disappearingMessagesSeconds! >= 86400 ? `${Math.round(group!.settings!.disappearingMessagesSeconds! / 86400)} day(s)` : `${Math.round(group!.settings!.disappearingMessagesSeconds! / 3600)} hour(s)`}.</span>
+        </div>
+      )}
 
       <Messages
         initialMessages={initialMessages}

@@ -125,11 +125,22 @@ jobs:
           # Fresh random values per run: nothing credential-shaped is committed
           # to the repository, and nothing generated here outlives the job.
           {
-            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
-            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
-            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
-            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
-          } >> "$GITHUB_ENV"
+            NEXTAUTH_SECRET="$(openssl rand -base64 32)"
+            UPSTASH_REDIS_REST_TOKEN="$(openssl rand -base64 24)"
+            PUSHER_APP_SECRET="$(openssl rand -hex 20)"
+            BLOB_READ_WRITE_TOKEN="$(openssl rand -base64 24)"
+            # Mask ephemeral values before adding them to the job environment.
+            echo "::add-mask::$NEXTAUTH_SECRET"
+            echo "::add-mask::$UPSTASH_REDIS_REST_TOKEN"
+            echo "::add-mask::$PUSHER_APP_SECRET"
+            echo "::add-mask::$BLOB_READ_WRITE_TOKEN"
+            {
+              echo "NEXTAUTH_SECRET=$NEXTAUTH_SECRET"
+              echo "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN"
+              echo "PUSHER_APP_SECRET=$PUSHER_APP_SECRET"
+              echo "BLOB_READ_WRITE_TOKEN=$BLOB_READ_WRITE_TOKEN"
+            } >> "$GITHUB_ENV"
+          }
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -149,10 +160,14 @@ jobs:
       - name: Build production bundle
         run: yarn build
 
-      - name: Install pinned Playwright and browser engines
+      - name: Install pinned Playwright, browser engines and Linux dependencies
         run: |
           npm install --global playwright@1.65.1
-          playwright install --with-deps chromium firefox webkit
+          # Install the exact OS libraries required by all three pinned engines.
+          # Browser downloads alone do not install WebKit's GTK/GStreamer stack;
+          # Chromium and Firefox may start while WebKit fails at launch.
+          playwright install chromium firefox webkit
+          playwright install-deps chromium firefox webkit
 
       - name: Start production server
         run: |
@@ -219,11 +234,22 @@ jobs:
           # Fresh random values per run: nothing credential-shaped is committed
           # to the repository, and nothing generated here outlives the job.
           {
-            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
-            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
-            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
-            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
-          } >> "$GITHUB_ENV"
+            NEXTAUTH_SECRET="$(openssl rand -base64 32)"
+            UPSTASH_REDIS_REST_TOKEN="$(openssl rand -base64 24)"
+            PUSHER_APP_SECRET="$(openssl rand -hex 20)"
+            BLOB_READ_WRITE_TOKEN="$(openssl rand -base64 24)"
+            # Mask ephemeral values before adding them to the job environment.
+            echo "::add-mask::$NEXTAUTH_SECRET"
+            echo "::add-mask::$UPSTASH_REDIS_REST_TOKEN"
+            echo "::add-mask::$PUSHER_APP_SECRET"
+            echo "::add-mask::$BLOB_READ_WRITE_TOKEN"
+            {
+              echo "NEXTAUTH_SECRET=$NEXTAUTH_SECRET"
+              echo "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN"
+              echo "PUSHER_APP_SECRET=$PUSHER_APP_SECRET"
+              echo "BLOB_READ_WRITE_TOKEN=$BLOB_READ_WRITE_TOKEN"
+            } >> "$GITHUB_ENV"
+          }
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -393,11 +419,22 @@ jobs:
           # Fresh random values per run: nothing credential-shaped is committed
           # to the repository, and nothing generated here outlives the job.
           {
-            echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
-            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -base64 24)"
-            echo "PUSHER_APP_SECRET=$(openssl rand -hex 20)"
-            echo "BLOB_READ_WRITE_TOKEN=$(openssl rand -base64 24)"
-          } >> "$GITHUB_ENV"
+            NEXTAUTH_SECRET="$(openssl rand -base64 32)"
+            UPSTASH_REDIS_REST_TOKEN="$(openssl rand -base64 24)"
+            PUSHER_APP_SECRET="$(openssl rand -hex 20)"
+            BLOB_READ_WRITE_TOKEN="$(openssl rand -base64 24)"
+            # Mask ephemeral values before adding them to the job environment.
+            echo "::add-mask::$NEXTAUTH_SECRET"
+            echo "::add-mask::$UPSTASH_REDIS_REST_TOKEN"
+            echo "::add-mask::$PUSHER_APP_SECRET"
+            echo "::add-mask::$BLOB_READ_WRITE_TOKEN"
+            {
+              echo "NEXTAUTH_SECRET=$NEXTAUTH_SECRET"
+              echo "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN"
+              echo "PUSHER_APP_SECRET=$PUSHER_APP_SECRET"
+              echo "BLOB_READ_WRITE_TOKEN=$BLOB_READ_WRITE_TOKEN"
+            } >> "$GITHUB_ENV"
+          }
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -510,3 +547,66 @@ jobs:
             fi
           done
           echo "All PR validation and security gates passed."
+
+  # Vercel is invoked only after the PR quality gate has confirmed that every
+  # validation and security job succeeded. Automatic Vercel Git deployments
+  # must be disabled in the Vercel project settings for this to be the sole path.
+  deploy-vercel-preview:
+    name: Deploy Vercel preview (after all CI)
+    needs:
+      - pr-quality-gate
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.pr-quality-gate.result == 'success' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Verify Vercel deployment credentials
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
+
+      - name: Checkout the exact commit that passed CI
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Link Vercel project
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          mkdir -p .vercel
+          printf '{"orgId":"%s","projectId":"%s"}\n' "$VERCEL_ORG_ID" "$VERCEL_PROJECT_ID" > .vercel/project.json
+
+      - name: Pull preview environment and build
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          vercel build --token="$VERCEL_TOKEN"
+
+      - name: Deploy tested preview
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel deploy --prebuilt --token="$VERCEL_TOKEN"

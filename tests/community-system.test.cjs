@@ -184,6 +184,22 @@ test("community admins can add a user directly and keep both membership indexes 
   assert.equal((await post({ action: "addMember", memberId: "other" })).status, 403, "ordinary members cannot add community members");
 });
 
+test("community admins can add a member by case-insensitive email address", async () => {
+  h.reset();
+  h.setUser("email-member", { name: "Email Member", email: "admin@yopmail.com" });
+  h.seedKv("user:email:admin@yopmail.com", "email-member");
+  const created = await call(communityCreate, { name: "Email community" });
+  const communityId = created.data.community.id;
+  const ctx = { params: Promise.resolve({ communityId }) };
+  const added = await status(await communityMutate.POST(h.request({
+    action: "addMember",
+    memberId: "ADMIN@YOPMAIL.COM",
+  }), ctx));
+  assert.equal(added.status, 200);
+  assert.ok(added.data.community.memberIds.includes("email-member"));
+  assert.ok(h.getSetMembers("user:email-member:communities").includes(communityId));
+});
+
 test("community mutations: declines are idempotent on both invitation indexes", async () => {
   h.reset();
   const created = await call(communityCreate, { name: "Org" });

@@ -28,6 +28,7 @@ import {
 import { Dispatch, FC, SetStateAction, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import ForwardMessageModal from './ForwardMessageModal'
+import FeatureMessageCard from './FeatureMessageCard'
 
 // Inline Audio Player for Voice Messages
 const AudioPlayerMessage: FC<{
@@ -870,6 +871,7 @@ const Messages: FC<MessagesProps> = ({
                 {/* Message Bubble Container */}
                 <div
                   className={cn('px-4 py-2.5 rounded-2xl inline-block shadow-xs', {
+                    'ring-1 ring-amber-300/70 shadow-md shadow-amber-500/10': message.featureType === 'announcement' && !message.isDeleted,
                     'bg-indigo-600 text-white': isCurrentUser && !message.isDeleted,
                     'bg-gray-200 dark:bg-zinc-800 text-gray-900 dark:text-gray-100':
                       !isCurrentUser && !message.isDeleted,
@@ -1015,7 +1017,7 @@ const Messages: FC<MessagesProps> = ({
                   ) : (
                     /* Regular text & timestamps & status */
                     <>
-                      {message.text && (
+                      {message.text && message.featureType !== 'announcement' && (
                         <p className='break-words text-sm'>
                           {message.text}
                           {message.isEdited && !message.isDeleted && (
@@ -1062,6 +1064,9 @@ const Messages: FC<MessagesProps> = ({
                             </span>
                           )}
                         </p>
+                      )}
+                      {isGroupChat && !message.isDeleted && message.featureType && message.featureId && (
+                        <FeatureMessageCard groupId={chatId.replace('group--', '')} featureType={message.featureType} featureId={message.featureId} />
                       )}
 
                       {/* If only media and no text, render timestamp and status below media */}
