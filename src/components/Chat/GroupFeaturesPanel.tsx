@@ -14,7 +14,7 @@ import DateTimePicker from "@/components/Chat/DateTimePicker"
 
 interface Props { isOpen: boolean; onClose: () => void; groupId: string; isAdmin: boolean }
 const pollSchema = z.object({ question: z.string().trim().min(3, "Enter a question with at least 3 characters").max(240), options: z.array(z.object({ value: z.string().trim().min(1, "Enter an option").max(100) })).min(2, "Add at least two options").max(10), multiple: z.boolean() })
-const eventSchema = z.object({ title: z.string().trim().min(3, "Event title must be at least 3 characters").max(120), description: z.string().max(1000), startsAt: z.string().min(1, "Choose an event date and start time"), timeOptions: z.array(z.string()).max(6).refine(values => values.filter(Boolean).length !== 1, "Add at least two alternative times, or clear the alternatives to use a fixed time") })
+const eventSchema = z.object({ title: z.string().trim().min(3, "Event title must be at least 3 characters").max(120), description: z.string().max(1000), startsAt: z.string().min(1, "Choose an event date and start time"), timeOptions: z.array(z.object({ value: z.string() })).max(6).refine(values => values.filter(option => option.value.trim()).length !== 1, "Add at least two alternative times, or clear the alternatives to use a fixed time") })
 type PollFormValues = z.infer<typeof pollSchema>
 type FeatureData = { polls: any[]; events: any[]; announcements: any[] }
 
@@ -24,7 +24,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   const pollForm = useForm<PollFormValues>({ resolver: zodResolver(pollSchema), defaultValues: { question: "", options: [{ value: "" }, { value: "" }], multiple: false } })
   const pollFields = useFieldArray({ control: pollForm.control, name: "options" })
   const [announcement, setAnnouncement] = useState("")
-  const eventForm = useForm<z.infer<typeof eventSchema>>({ resolver: zodResolver(eventSchema), defaultValues: { title: "", description: "", startsAt: "", timeOptions: ["", ""] }, mode: "onSubmit", reValidateMode: "onChange" })
+  const eventForm = useForm<z.infer<typeof eventSchema>>({ resolver: zodResolver(eventSchema), defaultValues: { title: "", description: "", startsAt: "", timeOptions: [{ value: "" }, { value: "" }] }, mode: "onSubmit", reValidateMode: "onChange" })
   const eventTimeFields = useFieldArray({ control: eventForm.control, name: "timeOptions" })
   const eventDate = eventForm.watch("startsAt")
   const [eventSelections, setEventSelections] = useState<Record<string, string[]>>({})
@@ -127,7 +127,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   }
   const createEvent = eventForm.handleSubmit(async values => {
     if (busy) return
-    const selectedTimes = values.timeOptions.map(value => value ? new Date(value).getTime() : 0).filter(Boolean)
+    const selectedTimes = values.timeOptions.map(option => option.value ? new Date(option.value).getTime() : 0).filter(Boolean)
     const startsAt = new Date(values.startsAt).getTime()
     if (!Number.isFinite(startsAt) || startsAt <= Date.now()) {
       eventForm.setError("startsAt", { type: "validate", message: "Choose a future event date and time" })
@@ -137,7 +137,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
     const optimisticEvent = { id: optimisticId, title: values.title.trim(), description: values.description, startsAt, createdAt: Date.now(), timeOptions: selectedTimes.map((time,index) => ({ id: `${optimisticId}-${index}`, startsAt: time, votes: [] })), responses: { going: [], maybe: [], "not-going": [] }, myOptionIds: [] }
     setFeatures(current => ({ ...current, events: [optimisticEvent, ...current.events] }))
     const saved = await act({ action: "createEvent", title: values.title.trim(), description: values.description, startsAt, ...(selectedTimes.length >= 2 ? { timeOptions: selectedTimes } : {}) })
-    if (saved) eventForm.reset({ title: "", description: "", startsAt: "", timeOptions: ["", ""] })
+    if (saved) eventForm.reset({ title: "", description: "", startsAt: "", timeOptions: [{ value: "" }, { value: "" }] })
     else setFeatures(current => ({ ...current, events: current.events.filter(item => item.id !== optimisticId) }))
   })
 
@@ -179,7 +179,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
                   </div>
                 </div>
                 {eventForm.formState.errors.startsAt && <p role="alert" className="text-xs font-medium text-rose-600 dark:text-rose-400">{eventForm.formState.errors.startsAt.message}</p>}
-                <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-400/20 dark:bg-indigo-400/[0.06]"><p className="mb-2 text-xs font-semibold">Let the group choose a time</p><p className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">Add at least two alternatives to enable voting.</p>{eventTimeFields.fields.map((field,index)=><div key={field.id} className="mb-2 flex items-center gap-2"><div className="min-w-0 flex-1"><DateTimePicker label={`Alternative time ${index+1}`} value={eventForm.watch(`timeOptions.${index}`) || ""} disabled={busy} onChange={next=>eventForm.setValue(`timeOptions.${index}`, next, { shouldDirty: true, shouldValidate: eventForm.formState.isSubmitted })}/></div>{eventTimeFields.fields.length>2&&<button type="button" aria-label={`Remove alternative ${index+1}`} onClick={()=>eventTimeFields.remove(index)} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-400/10"><X size={14}/></button>}</div>)}{eventForm.formState.errors.timeOptions && <p role="alert" className="mb-2 text-xs font-medium text-rose-600 dark:text-rose-400">{eventForm.formState.errors.timeOptions.message || eventForm.formState.errors.timeOptions.root?.message}</p>}<button type="button" onClick={()=>{if(eventTimeFields.fields.length<6)eventTimeFields.append("")}} disabled={eventTimeFields.fields.length>=6} className="text-xs font-medium text-indigo-600 disabled:opacity-40">+ Add another time</button></div>
+                <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-400/20 dark:bg-indigo-400/[0.06]"><p className="mb-2 text-xs font-semibold">Let the group choose a time</p><p className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">Add at least two alternatives to enable voting.</p>{eventTimeFields.fields.map((field,index)=><div key={field.id} className="mb-2 flex items-center gap-2"><div className="min-w-0 flex-1"><DateTimePicker label={`Alternative time ${index+1}`} value={eventForm.watch(`timeOptions.${index}.value`) || ""} disabled={busy} onChange={next=>eventForm.setValue(`timeOptions.${index}.value`, next, { shouldDirty: true, shouldValidate: eventForm.formState.isSubmitted })}/></div>{eventTimeFields.fields.length>2&&<button type="button" aria-label={`Remove alternative ${index+1}`} onClick={()=>eventTimeFields.remove(index)} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-400/10"><X size={14}/></button>}</div>)}{eventForm.formState.errors.timeOptions && <p role="alert" className="mb-2 text-xs font-medium text-rose-600 dark:text-rose-400">{eventForm.formState.errors.timeOptions.message || eventForm.formState.errors.timeOptions.root?.message}</p>}<button type="button" onClick={()=>{if(eventTimeFields.fields.length<6)eventTimeFields.append("")}} disabled={eventTimeFields.fields.length>=6} className="text-xs font-medium text-indigo-600 disabled:opacity-40">+ Add another time</button></div>
                 <div><textarea {...eventForm.register("description")} placeholder="Details (optional)" rows={2} maxLength={1000} aria-invalid={!!eventForm.formState.errors.description} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 aria-[invalid=true]:border-rose-500 aria-[invalid=true]:focus:border-rose-500 dark:border-white/10 dark:bg-white/[0.04] dark:focus:bg-white/[0.07]"/>{eventForm.formState.errors.description && <p role="alert" className="mt-1 text-xs font-medium text-rose-600 dark:text-rose-400">{eventForm.formState.errors.description.message}</p>}</div>
                 <button disabled={busy || eventForm.formState.isSubmitting} className="rounded-xl bg-indigo-600 text-white px-3 py-2 text-xs font-semibold disabled:opacity-50">Create event</button>
 
