@@ -6,14 +6,14 @@ const path = require("node:path");
 const source = fs.readFileSync(path.join(__dirname, "../src/components/Chat/GroupFeaturesPanel.tsx"), "utf8");
 
 test("event poll UI: creation exposes two default time choices and caps alternatives at six", () => {
-  assert.match(source, /defaultValues: \\{ title: "", description: "", startsAt: "", timeOptions: \\[\\{ value: "" \\}, \\{ value: "" \\}\\] \\}/);
+  assert.match(source, /defaultValues: \{ title: "", description: "", startsAt: "", timeOptions: \[\{ value: "" \}, \{ value: "" \}\] \}/);
   assert.match(source, /useFieldArray\(\{ control: eventForm\.control, name: \"timeOptions\" \}\)/);
   assert.match(source, /eventTimeFields\.fields\.length<6/);
-  assert.match(source, /eventTimeFields\.append\(\"\"\)/);
+  assert.match(source, /eventTimeFields\.append\(\{ value: "" \}\)/);
   assert.match(source, /DateTimePicker/);
   assert.doesNotMatch(source, /type=\"datetime-local\"/);
-  assert.match(source, /values\.filter\(Boolean\)\.length !== 1/);
-  assert.match(source, /values\.timeOptions\.map\(value => value \? new Date\(value\)\.getTime\(\) : 0\)/);
+  assert.match(source, /values\.filter\(option => option\.value\.trim\(\)\)\.length !== 1/);
+  assert.match(source, /values\.timeOptions\.map\(option => option\.value \? new Date\(option\.value\)\.getTime\(\) : 0\)/);
   assert.match(source, /selectedTimes\.length >= 2 \? \{ timeOptions: selectedTimes \} : \{\}/);
 });
 
