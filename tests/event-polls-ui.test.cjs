@@ -8,7 +8,8 @@ const source = fs.readFileSync(path.join(__dirname, "../src/components/Chat/Grou
 test("event poll UI: creation exposes two default time choices and caps alternatives at six", () => {
   assert.match(source, /useState\(\[\"\", \"\"\]\)/);
   assert.match(source, /prev\.length\s*<\s*6/);
-  assert.match(source, /DateTimePicker/);\n  assert.doesNotMatch(source, /type=\"datetime-local\"/);
+  assert.match(source, /DateTimePicker/);
+  assert.doesNotMatch(source, /type=\"datetime-local\"/);
   assert.match(source, /selectedTimes\.length === 1/);
   assert.match(source, /timeOptions: selectedTimes/);
 });
