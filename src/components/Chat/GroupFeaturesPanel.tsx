@@ -14,7 +14,8 @@ import DateTimePicker from "@/components/Chat/DateTimePicker"
 
 interface Props { isOpen: boolean; onClose: () => void; groupId: string; isAdmin: boolean }
 const pollSchema = z.object({ question: z.string().trim().min(3, "Enter a question with at least 3 characters").max(240), options: z.array(z.object({ value: z.string().trim().min(1, "Enter an option").max(100) })).min(2, "Add at least two options").max(10), multiple: z.boolean() })
-const eventSchema = z.object({ title: z.string().trim().min(3, "Event title must be at least 3 characters").max(120), description: z.string().max(1000), startsAt: z.number().int().positive("Choose an event date and time"), timeOptions: z.array(z.number().int().positive()).max(6) }).refine(data => data.timeOptions.length !== 1, { message: "Add at least two alternative times, or remove alternatives to use a fixed time", path: ["timeOptions"] })
+const eventBaseSchema = z.object({ title: z.string().trim().min(3, "Event title must be at least 3 characters").max(120), description: z.string().max(1000) })
+const eventSchema = eventBaseSchema.extend({ startsAt: z.number().int().positive("Choose an event date and time"), timeOptions: z.array(z.number().int().positive()).max(6) }).refine(data => data.timeOptions.length !== 1, { message: "Add at least two alternative times, or remove alternatives to use a fixed time", path: ["timeOptions"] })
 type PollFormValues = z.infer<typeof pollSchema>
 type FeatureData = { polls: any[]; events: any[]; announcements: any[] }
 
@@ -24,7 +25,7 @@ const GroupFeaturesPanel: FC<Props> = ({ isOpen, onClose, groupId, isAdmin }) =>
   const pollForm = useForm<PollFormValues>({ resolver: zodResolver(pollSchema), defaultValues: { question: "", options: [{ value: "" }, { value: "" }], multiple: false } })
   const pollFields = useFieldArray({ control: pollForm.control, name: "options" })
   const [announcement, setAnnouncement] = useState("")
-  const eventForm = useForm<{ title: string; description: string }>({ resolver: zodResolver(eventSchema.pick({ title: true, description: true })), defaultValues: { title: "", description: "" } })
+  const eventForm = useForm<{ title: string; description: string }>({ resolver: zodResolver(eventBaseSchema), defaultValues: { title: "", description: "" } })
   const [eventDate, setEventDate] = useState("")
   const [eventTimeOptions, setEventTimeOptions] = useState(["", ""])
   const [eventSelections, setEventSelections] = useState<Record<string, string[]>>({})
